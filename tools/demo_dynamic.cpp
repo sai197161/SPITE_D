@@ -28,8 +28,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -45,6 +47,57 @@ struct Options {
   std::string mode = "both";
   size_t slices = 1;
   bool trace = false;
+  std::string dumpJson;   // path for the viewer's data file
+  size_t renderCap = 4000; // max edges written to JSON
+};
+
+/// The viewer cannot draw 60k edges smoothly, so pick a subset once and
+/// share it across modes: every edge near the obstacle's swept path (the
+/// ones that actually change label) plus a spatial sample for context.
+struct RenderSet {
+  std::vector<size_t> edgeIds;             // indices into graph.edges
+  std::unordered_map<size_t, size_t> slot; // edge index -> position above
+
+  static RenderSet Build(const RoadmapGraph& graph, const Vec3& aim,
+                         double reach, size_t cap) {
+    RenderSet rs;
+    std::vector<size_t> near, far;
+    for (size_t e = 0; e < graph.edges.size(); ++e) {
+      const auto& a = graph.vertices[graph.edges[e].src].position;
+      const auto& b = graph.vertices[graph.edges[e].tgt].position;
+      const double da = std::sqrt(std::pow(a[0] - aim[0], 2) +
+                                  std::pow(a[1] - aim[1], 2) +
+                                  std::pow(a[2] - aim[2], 2));
+      const double db = std::sqrt(std::pow(b[0] - aim[0], 2) +
+                                  std::pow(b[1] - aim[1], 2) +
+                                  std::pow(b[2] - aim[2], 2));
+      (std::min(da, db) < reach ? near : far).push_back(e);
+    }
+    rs.edgeIds = near;
+    // Deterministic stride sample of the rest, up to the cap.
+    if (rs.edgeIds.size() < cap && !far.empty()) {
+      const size_t want = cap - rs.edgeIds.size();
+      const size_t stride = std::max<size_t>(1, far.size() / std::max<size_t>(1, want));
+      for (size_t i = 0; i < far.size() && rs.edgeIds.size() < cap; i += stride)
+        rs.edgeIds.push_back(far[i]);
+    }
+    if (rs.edgeIds.size() > cap) rs.edgeIds.resize(cap);
+    for (size_t i = 0; i < rs.edgeIds.size(); ++i) rs.slot[rs.edgeIds[i]] = i;
+    return rs;
+  }
+};
+
+/// One frame of viewer state.
+struct FrameDump {
+  double t = 0;
+  Vec3 obstacle{0, 0, 0};
+  std::vector<size_t> red, gray;   // positions within RenderSet
+  std::vector<size_t> path;
+  bool replanned = false;
+  bool rebuilt = false;
+  double ms = 0;
+  // Span envelope: frozen predicted centers + per-sample half widths.
+  std::vector<Vec3> envCenters, envHalf;
 };
 
 struct ModeResult {
@@ -54,6 +107,7 @@ struct ModeResult {
   int replans = 0;
   std::vector<double> updateMs;
   std::vector<size_t> pathSizes;
+  std::vector<FrameDump> frames;
 
   double Mean() const {
     double s = 0;
@@ -106,7 +160,7 @@ struct Scenario {
 /// midpoint of the initial path and follows constant velocity exactly.
 ModeResult RunMode(const std::string& name, const Options& opt,
                    const RoadmapGraph& graph, size_t start, size_t goal,
-                   const Scenario& scenario) {
+                   const Scenario& scenario, const RenderSet* render) {
   ModeResult result;
   result.name = name;
 
@@ -136,6 +190,7 @@ ModeResult RunMode(const std::string& name, const Options& opt,
   track.positionStd = {std0, std0, std0};
 
   std::vector<size_t> path = planner.Plan(start, goal, isValid);
+  size_t lastRebuilds = 0;
 
   if (opt.trace)
     std::printf("[%s]\n%5s %12s %7s %7s %9s %10s\n", name.c_str(), "t[s]",
@@ -169,6 +224,37 @@ ModeResult RunMode(const std::string& name, const Options& opt,
     }
     result.pathSizes.push_back(path.size());
 
+    if (render) {
+      FrameDump fd;
+      fd.t = t;
+      fd.obstacle = track.pose.translation;
+      fd.replanned = replanned;
+      fd.ms = result.updateMs.back();
+      fd.path = path;
+      const size_t rebuildsNow =
+          useSpans ? pipeline.GetStats().rebuilds : size_t(f + 1);
+      fd.rebuilt = rebuildsNow > lastRebuilds;
+      lastRebuilds = rebuildsNow;
+
+      for (size_t slot = 0; slot < render->edgeIds.size(); ++slot) {
+        const auto& e = graph.edges[render->edgeIds[slot]];
+        const auto v = server.GetEdgeValidity(e.src, e.tgt);
+        if (v == ValidityServer::Validity::INVALID) fd.red.push_back(slot);
+        else if (v == ValidityServer::Validity::UNKNOWN) fd.gray.push_back(slot);
+      }
+
+      if (useSpans) {
+        if (const Span* span = pipeline.GetSpan(track.id)) {
+          const auto& traj = span->Trajectory();
+          for (size_t i = 0; i < traj.poses.size(); ++i) {
+            fd.envCenters.push_back(traj.poses[i].translation);
+            fd.envHalf.push_back(span->EnvelopeHalfWidth(traj.stamps[i]));
+          }
+        }
+      }
+      result.frames.push_back(std::move(fd));
+    }
+
     if (opt.trace) {
       size_t gray = 0, red = 0;
       for (const auto& e : graph.edges) {
@@ -190,6 +276,85 @@ ModeResult RunMode(const std::string& name, const Options& opt,
   return result;
 }
 
+
+/// Minimal JSON writer for the HTML viewer (no dependency needed).
+void WriteViewerJson(const std::string& path, const std::string& roadmapName,
+                     const RoadmapGraph& graph, const RenderSet& render,
+                     const Scenario& scenario,
+                     const std::vector<ModeResult>& results) {
+  std::ofstream o(path);
+  if (!o) {
+    std::fprintf(stderr, "cannot write %s\n", path.c_str());
+    return;
+  }
+  o.precision(4);
+  o << std::fixed;
+
+  const auto vec3 = [&o](const Vec3& v) {
+    o << "[" << v[0] << "," << v[1] << "," << v[2] << "]";
+  };
+  const auto idxList = [&o](const std::vector<size_t>& v) {
+    o << "[";
+    for (size_t i = 0; i < v.size(); ++i) o << (i ? "," : "") << v[i];
+    o << "]";
+  };
+
+  o << "{\n\"roadmap\":{\"name\":\"" << roadmapName << "\",\"totalEdges\":"
+    << graph.edges.size() << ",\"totalVertices\":" << graph.vertices.size()
+    << ",\"dof\":" << graph.dof << ",\n\"vertices\":[";
+  for (size_t v = 0; v < graph.vertices.size(); ++v) {
+    if (v) o << ",";
+    vec3(graph.vertices[v].position);
+  }
+  o << "],\n\"edges\":[";
+  for (size_t i = 0; i < render.edgeIds.size(); ++i) {
+    const auto& e = graph.edges[render.edgeIds[i]];
+    if (i) o << ",";
+    o << "[" << e.src << "," << e.tgt << "]";
+  }
+  o << "]},\n\"obstacleHalf\":" << scenario.obstacleHalf << ",\n\"modes\":[";
+
+  for (size_t m = 0; m < results.size(); ++m) {
+    const auto& r = results[m];
+    if (m) o << ",";
+    o << "\n{\"name\":\"" << r.name << "\",\"geomPasses\":"
+      << r.geometryRebuilds << ",\"expiries\":" << r.expiries
+      << ",\"replans\":" << r.replans << ",\"meanMs\":" << r.Mean()
+      << ",\"medianMs\":" << r.Median() << ",\"maxMs\":" << r.Max()
+      << ",\n\"frames\":[";
+    for (size_t f = 0; f < r.frames.size(); ++f) {
+      const auto& fd = r.frames[f];
+      if (f) o << ",";
+      o << "\n{\"t\":" << fd.t << ",\"obstacle\":";
+      vec3(fd.obstacle);
+      o << ",\"ms\":" << fd.ms << ",\"replanned\":"
+        << (fd.replanned ? "true" : "false") << ",\"rebuilt\":"
+        << (fd.rebuilt ? "true" : "false") << ",\"red\":";
+      idxList(fd.red);
+      o << ",\"gray\":";
+      idxList(fd.gray);
+      o << ",\"path\":";
+      idxList(fd.path);
+      if (!fd.envCenters.empty()) {
+        o << ",\"env\":[";
+        for (size_t i = 0; i < fd.envCenters.size(); ++i) {
+          if (i) o << ",";
+          o << "{\"c\":";
+          vec3(fd.envCenters[i]);
+          o << ",\"h\":";
+          vec3(fd.envHalf[i]);
+          o << "}";
+        }
+        o << "]";
+      }
+      o << "}";
+    }
+    o << "]}";
+  }
+  o << "\n]}\n";
+  std::printf("wrote viewer data: %s\n", path.c_str());
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -200,6 +365,8 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--hz") && ++i < argc) opt.hz = std::atof(argv[i]);
     else if (!std::strcmp(argv[i], "--mode") && ++i < argc) opt.mode = argv[i];
     else if (!std::strcmp(argv[i], "--slices") && ++i < argc) opt.slices = std::atoi(argv[i]);
+    else if (!std::strcmp(argv[i], "--dump-json") && ++i < argc) opt.dumpJson = argv[i];
+    else if (!std::strcmp(argv[i], "--render-cap") && ++i < argc) opt.renderCap = std::atoi(argv[i]);
     else if (!std::strcmp(argv[i], "--trace")) opt.trace = true;
   }
   if (opt.dir.empty()) {
@@ -250,13 +417,27 @@ int main(int argc, char** argv) {
               start, goal, scenario.obstacleHalf, scenario.speed, aimPoint[0],
               aimPoint[1], aimPoint[2]);
 
+  std::unique_ptr<RenderSet> render;
+  if (!opt.dumpJson.empty()) {
+    // Reach: obstacle travel over the run, plus a margin, so every edge
+    // it can plausibly touch is drawn.
+    const double reach = 2.0 * scenario.speed * (opt.frames / opt.hz) +
+                         6.0 * scenario.obstacleHalf;
+    render = std::make_unique<RenderSet>(
+        RenderSet::Build(graph, aimPoint, reach, opt.renderCap));
+    std::printf("viewer: rendering %zu of %zu edges\n\n",
+                render->edgeIds.size(), graph.edges.size());
+  }
+
   std::vector<ModeResult> results;
   if (opt.mode == "baseline" || opt.mode == "both")
-    results.push_back(RunMode("baseline", opt, graph, start, goal, scenario));
+    results.push_back(RunMode("baseline", opt, graph, start, goal, scenario,
+                              render.get()));
   if (opt.mode == "spans" || opt.mode == "both") {
     std::string name = "spans";
     if (opt.slices > 1) name += "(k=" + std::to_string(opt.slices) + ")";
-    results.push_back(RunMode(name, opt, graph, start, goal, scenario));
+    results.push_back(RunMode(name, opt, graph, start, goal, scenario,
+                              render.get()));
   }
 
   std::printf("%-11s %7s %11s %9s %8s %26s\n", "mode", "frames", "geom-passes",
@@ -283,6 +464,13 @@ int main(int argc, char** argv) {
                   "(%d vs %d replans) -- expected only from span "
                   "conservatism at rebuild boundaries\n",
                   base.replans, spans.replans);
+  }
+  if (render && !opt.dumpJson.empty()) {
+    // Roadmap name from the directory's last component.
+    std::string name = opt.dir;
+    const size_t slash = name.find_last_of('/');
+    if (slash != std::string::npos) name = name.substr(slash + 1);
+    WriteViewerJson(opt.dumpJson, name, graph, *render, scenario, results);
   }
   return 0;
 }
