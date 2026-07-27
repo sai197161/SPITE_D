@@ -19,6 +19,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression, TextSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -81,8 +82,13 @@ def generate_launch_description():
              parameters=[{
                  'roadmap_graph': LaunchConfiguration('roadmap_graph'),
                  'roadmap_geoms': LaunchConfiguration('roadmap_geoms'),
-                 'start_vid': LaunchConfiguration('start_vid'),
-                 'goal_vid': LaunchConfiguration('goal_vid'),
+                 # Launch substitutions resolve to strings; the node declares
+                 # these as ints, so the type must be stated explicitly or
+                 # the node throws InvalidParameterTypeException at startup.
+                 'start_vid': ParameterValue(LaunchConfiguration('start_vid'),
+                                             value_type=int),
+                 'goal_vid': ParameterValue(LaunchConfiguration('goal_vid'),
+                                            value_type=int),
                  'sigma_gain': 1.0,
              }]),
     ])
