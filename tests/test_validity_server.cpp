@@ -109,5 +109,34 @@ int main() {
   path = planner.Plan(0, 3, isValid);
   assert((path == std::vector<Replanner::VID>{0, 1, 3}));
 
+  // ---- RetainOnly: obstacles that vanish from the snapshot must stop
+  // blocking. This is what the ROS node relies on -- without it a
+  // departed obstacle blocks its last-known edges for the process's
+  // lifetime.
+  track.id = 7;
+  track.stamp = 0.0;
+  track.pose.translation = {1.0, -2.0, 0.0};
+  server.Update({predictor.Predict(track, 4.0, 0.25)});
+  assert(server.GetEdgeValidity(0, 1) == V::INVALID);
+
+  // A snapshot that still contains id 7 changes nothing.
+  server.RetainOnly({7});
+  assert(server.GetEdgeValidity(0, 1) == V::INVALID);
+
+  // A snapshot without it releases the track and heals the corridor.
+  server.RetainOnly({});
+  assert(server.GetEdgeValidity(0, 1) == V::VALID);
+
+  // Slots are recycled: many short-lived ids (the track-churn pattern
+  // real perception produces) must not accumulate. Each new id reuses
+  // the slot freed by the previous one, and the final state is clean.
+  for (int32_t id = 100; id < 140; ++id) {
+    track.id = id;
+    server.Update({predictor.Predict(track, 4.0, 0.25)});
+    assert(server.GetEdgeValidity(0, 1) == V::INVALID);
+    server.RetainOnly({});
+    assert(server.GetEdgeValidity(0, 1) == V::VALID);
+  }
+
   return 0;
 }

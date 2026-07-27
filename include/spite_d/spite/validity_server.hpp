@@ -61,8 +61,16 @@ class ValidityServer {
 
   /// Drop a track (target lost / left the workspace) and re-validate
   /// the roadmap elements it was invalidating (whole-horizon and
-  /// slice slots alike).
+  /// slice slots alike). The freed slot is reused by the next new track.
   void Forget(int32_t obstacleId);
+
+  /// Keep only these obstacle ids; drop every other tracked obstacle in
+  /// a single reconciliation pass. Callers that receive a full snapshot
+  /// of currently-visible obstacles each frame should use this: without
+  /// it, an obstacle that leaves the scene keeps blocking the edges it
+  /// last intersected for the lifetime of the process, and its slot is
+  /// never released.
+  void RetainOnly(const std::vector<int32_t>& activeIds);
 
   Validity GetVertexValidity(size_t vid) const;
   Validity GetEdgeValidity(size_t src, size_t tgt) const;

@@ -76,6 +76,14 @@ class ValidityNode : public rclcpp::Node {
       }
       predictions.push_back(std::move(traj));
     }
+    // Obstacles absent from this snapshot have left the scene: release
+    // their slots and re-validate what they were blocking. Without this
+    // a departed obstacle blocks its last-known edges forever.
+    std::vector<int32_t> activeIds;
+    activeIds.reserve(predictions.size());
+    for (const auto& t : predictions) activeIds.push_back(t.id);
+    m_server->RetainOnly(activeIds);
+
     m_server->Update(predictions);
 
     // Gray (UNKNOWN) edges are conservatively treated as blocked until

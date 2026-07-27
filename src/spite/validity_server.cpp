@@ -5,7 +5,10 @@
 #include "OverApprox.h"
 
 #include <algorithm>
+#include <map>
+#include <set>
 #include <unordered_map>
+#include <vector>
 
 namespace spite_d {
 
@@ -50,6 +53,22 @@ struct ValidityServer::Impl {
   /// Slice-mode slots, keyed by (track id, slice index).
   std::map<std::pair<int32_t, size_t>, size_t> sliceSlots;
   size_t nextSlot{0};
+  /// Slots released by Forget/RetainOnly, available for reuse. Without
+  /// this, track-id churn allocates a fresh slot per id forever and the
+  /// reconciliation pass grows without bound.
+  std::vector<size_t> freeSlots;
+
+  size_t AcquireSlot() {
+    if (freeSlots.empty()) return nextSlot++;
+    const size_t slot = freeSlots.back();
+    freeSlots.pop_back();
+    return slot;
+  }
+
+  void ReleaseSlot(size_t slot) {
+    ParkSlot(slot);
+    freeSlots.push_back(slot);
+  }
 
   /// Build one slot's SPITE geometry from one trajectory (whole-horizon
   /// or a slice -- same +/-k*sigma construction either way).
@@ -110,8 +129,9 @@ void ValidityServer::Update(
 
   for (const PredictedTrajectory& traj : predictions) {
     if (traj.poses.empty()) continue;
-    auto [it, inserted] = impl.trackToSlot.try_emplace(traj.id, impl.nextSlot);
-    if (inserted) ++impl.nextSlot;
+    auto it = impl.trackToSlot.find(traj.id);
+    if (it == impl.trackToSlot.end())
+      it = impl.trackToSlot.emplace(traj.id, impl.AcquireSlot()).first;
     impl.BuildSlotGeometry(it->second, traj);
   }
 
@@ -123,9 +143,10 @@ void ValidityServer::UpdateSlices(
   auto& impl = *m_impl;
   for (size_t s = 0; s < slices.size(); ++s) {
     if (slices[s].poses.empty()) continue;
-    auto [it, inserted] =
-        impl.sliceSlots.try_emplace({obstacleId, s}, impl.nextSlot);
-    if (inserted) ++impl.nextSlot;
+    auto it = impl.sliceSlots.find({obstacleId, s});
+    if (it == impl.sliceSlots.end())
+      it = impl.sliceSlots.emplace(std::make_pair(obstacleId, s),
+                                   impl.AcquireSlot()).first;
     impl.BuildSlotGeometry(it->second, slices[s]);
   }
   impl.drm->ShallowUpdate();
@@ -151,19 +172,46 @@ void ValidityServer::Forget(int32_t obstacleId) {
 
   auto it = impl.trackToSlot.find(obstacleId);
   if (it != impl.trackToSlot.end()) {
-    impl.ParkSlot(it->second);
+    impl.ReleaseSlot(it->second);
     impl.trackToSlot.erase(it);
     any = true;
   }
   for (auto sit = impl.sliceSlots.begin(); sit != impl.sliceSlots.end();) {
     if (sit->first.first == obstacleId) {
-      impl.ParkSlot(sit->second);
+      impl.ReleaseSlot(sit->second);
       sit = impl.sliceSlots.erase(sit);
       any = true;
     } else {
       ++sit;
     }
   }
+  if (any) impl.drm->ShallowUpdate();
+}
+
+void ValidityServer::RetainOnly(const std::vector<int32_t>& activeIds) {
+  auto& impl = *m_impl;
+  const std::set<int32_t> active(activeIds.begin(), activeIds.end());
+  bool any = false;
+
+  for (auto it = impl.trackToSlot.begin(); it != impl.trackToSlot.end();) {
+    if (active.count(it->first)) {
+      ++it;
+      continue;
+    }
+    impl.ReleaseSlot(it->second);
+    it = impl.trackToSlot.erase(it);
+    any = true;
+  }
+  for (auto it = impl.sliceSlots.begin(); it != impl.sliceSlots.end();) {
+    if (active.count(it->first.first)) {
+      ++it;
+      continue;
+    }
+    impl.ReleaseSlot(it->second);
+    it = impl.sliceSlots.erase(it);
+    any = true;
+  }
+  // One reconciliation pass no matter how many tracks were dropped.
   if (any) impl.drm->ShallowUpdate();
 }
 
