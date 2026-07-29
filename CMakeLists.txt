@@ -189,6 +189,23 @@ if(ament_cmake_FOUND)
     endif()
   endif()
 
+  # ament sets BUILD_SHARED_LIBS=ON, so every library here builds as a .so
+  # and must be installed where setup.bash's LD_LIBRARY_PATH points --
+  # including open-spite's own targets, whose install rules are skipped
+  # because we add it with EXCLUDE_FROM_ALL. Without this the executables
+  # link fine but fail at startup with "cannot open shared object file".
+  set(_spite_d_libs spite_d_trajectory spite_d_planner spite_d_dynamic_map)
+  if(TARGET spite_d_perception)
+    list(APPEND _spite_d_libs spite_d_perception)
+  endif()
+  if(SPITE_D_HAVE_OPEN_SPITE)
+    list(APPEND _spite_d_libs spite_d_validity open_spite open_spite_gdiam)
+  endif()
+  install(TARGETS ${_spite_d_libs}
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
+
   # Only install asset directories that exist: empty ones (e.g. rviz/)
   # do not survive a git clone, and a missing directory here fails the
   # whole build for anyone cloning the repo.
