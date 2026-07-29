@@ -1,37 +1,32 @@
 # Plain-assert unit tests; no framework dependency so they run anywhere.
-add_executable(test_predictor test_predictor.cpp)
-target_link_libraries(test_predictor PRIVATE spite_d_trajectory)
-add_test(NAME test_predictor COMMAND test_predictor)
+#
+# Every test here asserts. A Release build defines NDEBUG, which turns
+# assert() into a no-op -- the tests would then run, check nothing, and
+# report success. Undefine it for test targets so the suite is always
+# armed regardless of CMAKE_BUILD_TYPE.
+function(spite_d_add_test name)
+  add_executable(${name} ${name}.cpp)
+  target_link_libraries(${name} PRIVATE ${ARGN})
+  target_compile_options(${name} PRIVATE -UNDEBUG)
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
 
-add_executable(test_replanner test_replanner.cpp)
-target_link_libraries(test_replanner PRIVATE spite_d_planner)
-add_test(NAME test_replanner COMMAND test_replanner)
+spite_d_add_test(test_predictor spite_d_trajectory)
+
+spite_d_add_test(test_replanner spite_d_planner)
 
 if(TARGET spite_d_validity)
-  add_executable(test_validity_server test_validity_server.cpp)
-  target_link_libraries(test_validity_server
-    PRIVATE spite_d_validity spite_d_trajectory spite_d_planner)
-  add_test(NAME test_validity_server COMMAND test_validity_server)
+  spite_d_add_test(test_validity_server spite_d_validity spite_d_trajectory spite_d_planner)
 
-  add_executable(test_roadmap_roundtrip test_roadmap_roundtrip.cpp)
-  target_link_libraries(test_roadmap_roundtrip
-    PRIVATE spite_d_validity spite_d_trajectory spite_d_planner)
-  add_test(NAME test_roadmap_roundtrip COMMAND test_roadmap_roundtrip)
+  spite_d_add_test(test_roadmap_roundtrip spite_d_validity spite_d_trajectory spite_d_planner)
 endif()
 
-add_executable(test_span test_span.cpp)
-target_link_libraries(test_span PRIVATE spite_d_dynamic_map)
-add_test(NAME test_span COMMAND test_span)
+spite_d_add_test(test_span spite_d_dynamic_map)
 
 if(TARGET spite_d_validity)
-  add_executable(test_span_pipeline test_span_pipeline.cpp)
-  target_link_libraries(test_span_pipeline
-    PRIVATE spite_d_dynamic_map spite_d_validity spite_d_trajectory)
-  add_test(NAME test_span_pipeline COMMAND test_span_pipeline)
+  spite_d_add_test(test_span_pipeline spite_d_dynamic_map spite_d_validity spite_d_trajectory)
 endif()
 
 if(TARGET spite_d_perception)
-  add_executable(test_perception test_perception.cpp)
-  target_link_libraries(test_perception PRIVATE spite_d_perception)
-  add_test(NAME test_perception COMMAND test_perception)
+  spite_d_add_test(test_perception spite_d_perception)
 endif()
