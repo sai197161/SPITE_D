@@ -102,8 +102,7 @@ colcon build --packages-select spite_d
 source install/setup.bash
 ```
 
-That is the whole procedure — no CMake arguments, no separately installed
-open-spite. Expect the first build to take under a minute.
+Expect the first build to take under a minute.
 
 If you forgot `--recursive`, the build warns that open-spite is missing and
 skips the certification targets. Fix it with:
@@ -119,7 +118,7 @@ an expected binary is missing, search the build output for `skipped`** — that
 is almost always why.
 
 Remember that `source install/setup.bash` is needed in **every** terminal that
-runs or inspects this package.
+runs or inspects this package. Add it to your bash script for convenience.
 
 ## Running the tests
 
