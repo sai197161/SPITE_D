@@ -5,18 +5,15 @@ planning.
 
 A robot that plans with a **roadmap** (a precomputed graph of collision-free
 configurations, with edges for the motions between them) can answer planning
-queries quickly — but only while the world matches the one the roadmap was
-built in. When obstacles move, some edges become unsafe, and finding out which
-ones is expensive: it means re-checking robot geometry against obstacle
-geometry many times per second.
+queries quickly, but only in static worlds. When obstacles move, replanning is expensive. Nodes must be revalidated, meaning robot geometry has to be checked against obstacle geometry each time the configuration changes.
 
 This package extends [SPITE / RGG](https://github.com/parasollab/open-spite),
-which handles obstacles that *jump* between discrete positions, to obstacles
+which handles obstacles that move between discrete positions, to obstacles
 that **move continuously and whose future motion is predicted**.
 
 ## How it works
 
-The runtime loop has five stages:
+In five stages:
 
 1. **Perception** — a depth image is turned into tracked obstacle boxes
    (position, size, velocity, and an uncertainty estimate) using a U-map
@@ -40,7 +37,7 @@ The runtime loop has five stages:
    valid for free. The expensive work reruns only when the obstacle breaks its
    prediction, the horizon runs out, or a new obstacle appears.
 
-Spans can optionally be cut into `k` **time slices**, so slices the clock has
+Spans can further discretized into `k` **time slices**, so slices the clock has
 passed are dropped by bookkeeping alone — letting edges reopen *behind* a
 departing obstacle without rebuilding anything.
 
@@ -79,7 +76,7 @@ sudo apt install libcgal-dev libompl-dev libeigen3-dev libfcl-dev \
 
 [open-spite](https://github.com/parasollab/open-spite) itself is vendored as a
 git submodule and compiled as part of this build, so there is nothing to
-install for it — just remember to clone recursively below.
+install for it. Just remember to clone recursively below!
 
 ## Building
 
