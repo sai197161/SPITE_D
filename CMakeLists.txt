@@ -149,23 +149,29 @@ if(ament_cmake_FOUND)
 
   if(TARGET spite_d_perception)
     add_executable(perception_node src/nodes/perception_node.cpp)
-    target_link_libraries(perception_node
-      PRIVATE spite_d_perception "${cpp_typesupport_target}")
-    ament_target_dependencies(perception_node rclcpp sensor_msgs)
+    target_link_libraries(perception_node PRIVATE
+      spite_d_perception
+      "${cpp_typesupport_target}"
+      rclcpp::rclcpp
+      ${sensor_msgs_TARGETS})
     install(TARGETS perception_node DESTINATION lib/${PROJECT_NAME})
   endif()
 
   add_executable(prediction_node src/nodes/prediction_node.cpp)
-  target_link_libraries(prediction_node
-    PRIVATE spite_d_trajectory "${cpp_typesupport_target}")
-  ament_target_dependencies(prediction_node rclcpp)
+  target_link_libraries(prediction_node PRIVATE
+    spite_d_trajectory
+    "${cpp_typesupport_target}"
+    rclcpp::rclcpp)
   install(TARGETS prediction_node DESTINATION lib/${PROJECT_NAME})
 
   if(SPITE_D_HAVE_OPEN_SPITE)
     add_executable(validity_node src/nodes/validity_node.cpp)
-    target_link_libraries(validity_node
-      PRIVATE spite_d_validity spite_d_planner "${cpp_typesupport_target}")
-    ament_target_dependencies(validity_node rclcpp nav_msgs)
+    target_link_libraries(validity_node PRIVATE
+      spite_d_validity
+      spite_d_planner
+      "${cpp_typesupport_target}"
+      rclcpp::rclcpp
+      ${nav_msgs_TARGETS})
     install(TARGETS validity_node DESTINATION lib/${PROJECT_NAME})
 
     if(TARGET build_roadmap)
