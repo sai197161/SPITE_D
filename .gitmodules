@@ -1,0 +1,3 @@
+[submodule "external/open-spite"]
+	path = external/open-spite
+	url = https://github.com/parasollab/open-spite.git

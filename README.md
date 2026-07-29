@@ -70,14 +70,21 @@ which mode it is in automatically:
 
 ## Prerequisites
 
-This package uses [open-spite](https://github.com/parasol-lab/open-spite) as a
-library. **Clone it first** — you pass its path to CMake:
+[open-spite](https://github.com/parasollab/open-spite) is vendored as a git
+submodule, so clone this repository **recursively**:
 
 ```bash
-git clone https://github.com/parasol-lab/open-spite.git ~/open-spite
+git clone --recursive https://github.com/sai197161/SPITE_D.git
 ```
 
-open-spite needs CGAL, Boost, GMP, MPFR, Eigen, FCL and nlohmann_json. OMPL is
+Already cloned without `--recursive`? Fetch it with:
+
+```bash
+git submodule update --init --recursive
+```
+
+open-spite is compiled from source as part of this build (unlike the libraries
+below, which are installed system-wide and found automatically). It needs CGAL, Boost, GMP, MPFR, Eigen, FCL and nlohmann_json. OMPL is
 needed for the roadmap builders, OpenCV for perception.
 
 ### Linux (Ubuntu, ROS 2 Jazzy)
@@ -96,7 +103,7 @@ not compile under recent Apple Clang.
 brew install cmake ninja opencv ompl
 pip install conan && conan profile detect
 
-cd ~/open-spite
+cd <this repo>/external/open-spite
 export CMAKE_POLICY_VERSION_MINIMUM=3.5     # CMake 4.x vs. older recipes
 conan install . --output-folder=build --build=missing \
       -s build_type=Release -s compiler.cppstd=gnu17
@@ -111,14 +118,14 @@ cd ~/spited_ws/src/SPITE_D
 export CMAKE_POLICY_VERSION_MINIMUM=3.5           # macOS only
 
 cmake -B build-core -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DSPITE_D_OPEN_SPITE_DIR=$HOME/open-spite \
-      -DCMAKE_TOOLCHAIN_FILE=$HOME/open-spite/build/conan_toolchain.cmake
+      -DCMAKE_TOOLCHAIN_FILE=$PWD/external/open-spite/build/conan_toolchain.cmake
                                                    # ^ macOS only, omit on Linux
 cmake --build build-core
 ```
 
-`SPITE_D_OPEN_SPITE_DIR` must point at open-spite's **repository root** — the
-directory containing its `CMakeLists.txt`.
+open-spite is found automatically at `external/open-spite`. To build against a
+different checkout, set `SPITE_D_OPEN_SPITE_DIR` to its repository root (the
+directory containing its `CMakeLists.txt`).
 
 Targets are skipped gracefully when a dependency is missing: no OpenCV means no
 perception library, no OMPL means no roadmap builders, no
@@ -130,22 +137,11 @@ the reason.
 
 ```bash
 cd ~/spited_ws
-colcon build --packages-select spite_d \
-      --cmake-args -DSPITE_D_OPEN_SPITE_DIR=$HOME/open-spite
+colcon build --packages-select spite_d
 source install/setup.bash
 ```
 
-To avoid repeating the path, put it in `~/.colcon/defaults.yaml`:
-
-```yaml
-build:
-  cmake-args:
-    - -DSPITE_D_OPEN_SPITE_DIR=/home/YOU/open-spite
-```
-
-> `colcon build --cmake-clean-cache` erases **all** cached `-D` settings. If you
-> use it, repeat every `-D` you need on the same command line, or the
-> certification targets silently vanish from the build.
+No extra arguments are needed — the submodule supplies open-spite.
 
 ## Running the tests
 

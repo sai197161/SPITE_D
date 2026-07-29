@@ -17,14 +17,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ---------------------------------------------------------------------------
 find_package(ament_cmake QUIET)
 
-# open-spite: consumed as a subdirectory. Its CGAL dependency must be
-# resolvable (conan toolchain on macOS, system CGAL on the Linux box).
-set(SPITE_D_OPEN_SPITE_DIR "" CACHE PATH "Path to the open-spite source tree")
-if(SPITE_D_OPEN_SPITE_DIR)
+# open-spite is compiled from source as part of this build, so CMake needs
+# its source directory -- unlike CGAL/OMPL/OpenCV, which are installed
+# system-wide and found automatically. It is vendored as a git submodule
+# at external/open-spite so no path has to be supplied; point
+# SPITE_D_OPEN_SPITE_DIR elsewhere to build against a different checkout.
+set(SPITE_D_OPEN_SPITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/open-spite"
+    CACHE PATH "Path to the open-spite source tree")
+
+if(EXISTS "${SPITE_D_OPEN_SPITE_DIR}/CMakeLists.txt")
   add_subdirectory(${SPITE_D_OPEN_SPITE_DIR} open_spite_build EXCLUDE_FROM_ALL)
   set(SPITE_D_HAVE_OPEN_SPITE TRUE)
 else()
-  message(STATUS "spite_d: SPITE_D_OPEN_SPITE_DIR not set; spite/planner cores skipped")
+  # An empty external/open-spite means the repo was cloned without its
+  # submodules; say so rather than failing deep inside add_subdirectory.
+  message(WARNING
+    "spite_d: open-spite not found at ${SPITE_D_OPEN_SPITE_DIR}\n"
+    "  Run: git submodule update --init --recursive\n"
+    "  Certification, span, and roadmap targets will be skipped.")
   set(SPITE_D_HAVE_OPEN_SPITE FALSE)
 endif()
 
