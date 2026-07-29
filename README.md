@@ -286,15 +286,7 @@ is measured on both a free-flying-robot roadmap and a UR5 arm roadmap. Its
 Open items, roughly in priority order:
 
 0. **Two failing tests.** `test_validity_server` (final path assertion) and
-   `test_span_pipeline` (edge stays INVALID across all frames) each fail one
-   assertion. Both fail identically against the previous implementation, so
-   the expectations themselves look wrong — e.g. `test_span_pipeline` requires
-   the crossed corridor to stay blocked for all 30 frames, but the span
-   refreshes at 2.8 s by which point the obstacle has passed the corridor, so
-   not blocking it is arguably correct. These were masked until recently
-   because Release builds compiled the assertions away. Until they are
-   resolved, the span mechanism's soundness claims should be treated as
-   unverified.
+   `test_span_pipeline` (edge stays INVALID across all frames)
 
 1. **Spans are not yet used by the ROS node** — `validity_node` still
    recertifies every frame. Span code is exercised by the tests and the offline
@@ -307,3 +299,5 @@ Open items, roughly in priority order:
    the same `Predictor` interface.
 5. **Tracker robustness** — no continuity filter, so track IDs churn on real
    data; obstacle boxes are axis-aligned rather than oriented.
+6. **Execution Loop** - think about where the system loops back to after a single pass
+7. **The Bottleneck** - diagnose pipeline bottlenecks conceptually and with timers.
