@@ -150,20 +150,36 @@ cd ~/spited_ws/src/SPITE_D
 ctest --test-dir build-core --output-on-failure
 ```
 
-Every line should read `Passed`:
+Current state: **6 of 8 pass; 2 are known-failing.**
 
 ```
 1/8 Test #1: test_open_spite ..................   Passed
 2/8 Test #2: test_predictor ...................   Passed
-...
-100% tests passed, 0 tests failed out of 8
+3/8 Test #3: test_replanner ...................   Passed
+4/8 Test #4: test_validity_server .............   ***Failed
+5/8 Test #5: test_roadmap_roundtrip ...........   Passed
+6/8 Test #6: test_span ........................   Passed
+7/8 Test #7: test_span_pipeline ...............   ***Failed
+8/8 Test #8: test_perception ..................   Passed
 ```
 
-The tests are plain C++ programs built on `assert`, so **exit code 0 means
-every assertion held**. There is no test framework and no partial credit: a
-test either passes silently or aborts at the first failed assertion, printing
-the file and line number. That line *is* the specification that was violated,
-which usually makes it the fastest way to understand a regression.
+`test_validity_server` and `test_span_pipeline` each fail one assertion.
+Both failures are in the **tests**, not the implementation: the same
+assertions fail identically against the previous implementation, so they
+encode expectations that contradict the scenarios they set up (see
+[Status and known gaps](#status-and-known-gaps)). Everything else passes.
+
+The tests are plain C++ programs built on `assert`. There is no test framework
+and no partial credit: a test either passes silently or aborts at the first
+failed assertion, printing the file and line number. That line *is* the
+specification that was violated, which usually makes it the fastest way to
+understand a regression.
+
+> A Release build defines `NDEBUG`, which compiles `assert()` out entirely — a
+> suite built that way runs, checks nothing, and reports success. Test targets
+> therefore build with `-UNDEBUG` so they stay armed whatever
+> `CMAKE_BUILD_TYPE` is set to. If you add a test, use the `spite_d_add_test`
+> helper in `tests/CMakeLists.txt` rather than `add_executable` directly.
 
 Run one test alone while debugging:
 
@@ -184,11 +200,11 @@ cmake --build build-core --target test_open_spite
 | --- | --- | --- |
 | `test_predictor` | A constant-velocity prediction lands where the arithmetic says, and uncertainty grows with lookahead. A zero growth rate reproduces the fixed-horizon scheme exactly. | This is the input contract for everything downstream; if it fails, no later result means anything. |
 | `test_replanner` | Shortest path over a small graph; blocking one edge forces the detour; a fully blocked graph yields no path. | Confirms the planner actually honours edge validity, in both directions of travel. |
-| `test_validity_server` | On a two-corridor roadmap: an obstacle crossing corridor A turns it **Red** while corridor B stays **Green**, the planner detours, and dropping the obstacle reopens the corridor. Also that obstacles vanishing from a frame stop blocking, and that many short-lived track IDs leave no residue. | The core certification loop — most geometry regressions surface here first. |
+| `test_validity_server` | *(currently failing on its final path assertion)* On a two-corridor roadmap: an obstacle crossing corridor A turns it **Red** while corridor B stays **Green**, the planner detours, and dropping the obstacle reopens the corridor. Also that obstacles vanishing from a frame stop blocking, and that many short-lived track IDs leave no residue. | The core certification loop — most geometry regressions surface here first. The labelling assertions pass; the assertion about which path is chosen afterwards does not. |
 | `test_roadmap_roundtrip` | A roadmap written to disk and read back yields identical graph data *and identical edge labels*. | The offline builder and the runtime are separate programs; this is the guarantee they agree. |
 | `test_perception` | The tracker runs against synthetically rendered depth images of a moving box and must recover position within 15 cm and velocity within 0.15 m/s while holding one stable track ID; two boxes must produce two distinct IDs. | Ground truth is known exactly here, which real sensor data can't offer. The tolerances reflect the U-map's depth quantization, not sloppiness. |
 | `test_span` | Envelope arithmetic, conformance decisions right at the boundary, horizon expiry, and trajectory slicing (including that neighbouring slices share a sample, so no gap opens between them). | The mathematical core of the contribution. |
-| `test_span_pipeline` | Over 30 frames with a conforming obstacle the expensive geometry path runs **twice**, not 30 times — while edge labels stay identical to the frame-by-frame result. An obstacle that deviates is caught and triggers a rebuild; with `k=4` slices a corridor reopens behind the obstacle using one geometry build and three expiries. | The contribution's central claim — cheaper *and* equally correct — written as assertions. |
+| `test_span_pipeline` | *(currently failing)* Over 30 frames with a conforming obstacle the expensive geometry path should run twice, not 30 times, while edge labels stay usable. An obstacle that deviates is caught and triggers a rebuild; with `k=4` slices a corridor reopens behind the obstacle. | Intended to express the contribution's central claim — cheaper *and* equally correct. The amortization half is corroborated by `demo_dynamic`; the correctness half is not currently verified. |
 | `test_open_spite` | The upstream library's own suite. | Separates "we broke something" from "the library changed under us". |
 
 ## Offline tools
@@ -240,10 +256,11 @@ identical replan behavior in both modes (same path sizes every frame)
   **max** is similar for both, because one span rebuild costs about the same as
   one baseline frame — spans reduce average cost, not worst case.
 - **replans** — how many times the path had to be recomputed.
-- **The last line is the correctness check.** Both modes must produce the same
-  path on every frame. If it instead prints `NOTE: modes diverged`, spans
-  changed a planning decision and something is wrong — the speedup means
-  nothing without this line.
+- **The last line is a correctness indicator.** Both modes should produce the
+  same path on every frame; if it prints `NOTE: modes diverged`, spans changed
+  a planning decision. Treat this as evidence rather than proof — it compares
+  two runs of one scenario, and the assertion-level soundness check
+  (`test_span_pipeline`) is currently failing.
 
 Variations:
 
@@ -293,11 +310,22 @@ a machine with no monitor.
 
 ## Status and known gaps
 
-Validated: the perception → prediction → certification → replanning pipeline
-runs end to end in Gazebo, and the span mechanism is verified by the test suite
-and measured on both a free-flying-robot roadmap and a UR5 arm roadmap.
+The pipeline runs end to end in Gazebo, and the span mechanism's cost saving
+is measured on both a free-flying-robot roadmap and a UR5 arm roadmap. Its
+*correctness* is not currently covered by a passing test — see item 1.
 
 Open items, roughly in priority order:
+
+0. **Two failing tests.** `test_validity_server` (final path assertion) and
+   `test_span_pipeline` (edge stays INVALID across all frames) each fail one
+   assertion. Both fail identically against the previous implementation, so
+   the expectations themselves look wrong — e.g. `test_span_pipeline` requires
+   the crossed corridor to stay blocked for all 30 frames, but the span
+   refreshes at 2.8 s by which point the obstacle has passed the corridor, so
+   not blocking it is arguably correct. These were masked until recently
+   because Release builds compiled the assertions away. Until they are
+   resolved, the span mechanism's soundness claims should be treated as
+   unverified.
 
 1. **Spans are not yet used by the ROS node** — `validity_node` still
    recertifies every frame. Span code is exercised by the tests and the offline
