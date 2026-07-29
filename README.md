@@ -61,93 +61,71 @@ gazebo/worlds/     simulation worlds for depth data collection
 launch/            ROS 2 launch files
 ```
 
-Everything except `src/nodes/` is plain C++17 with **no ROS dependency**, so
-the whole pipeline builds and runs on a laptop without ROS. The build detects
-which mode it is in automatically:
+Everything except `src/nodes/` is plain C++17 with no ROS dependency, so the
+core libraries, offline tools, and tests can also be built with plain CMake if
+you want to work on the algorithms without ROS in the way. The instructions
+below use the normal ROS 2 workflow.
 
-- **core mode** — plain CMake; libraries, offline tools, and tests.
-- **ROS mode** — under `colcon`; adds ROS message types and node executables.
+## Requirements
 
-## Prerequisites
-
-[open-spite](https://github.com/parasollab/open-spite) is vendored as a git
-submodule, so clone this repository **recursively**:
-
-```bash
-git clone --recursive https://github.com/sai197161/SPITE_D.git
-```
-
-Already cloned without `--recursive`? Fetch it with:
-
-```bash
-git submodule update --init --recursive
-```
-
-open-spite is compiled from source as part of this build (unlike the libraries
-below, which are installed system-wide and found automatically). It needs CGAL, Boost, GMP, MPFR, Eigen, FCL and nlohmann_json. OMPL is
-needed for the roadmap builders, OpenCV for perception.
-
-### Linux (Ubuntu, ROS 2 Jazzy)
+- Ubuntu with **ROS 2 Jazzy** installed and sourced
+- The libraries open-spite needs, plus OMPL for the roadmap builders and
+  OpenCV for perception:
 
 ```bash
 sudo apt install libcgal-dev libompl-dev libeigen3-dev libfcl-dev \
                  nlohmann-json3-dev libopencv-dev
 ```
 
-### macOS
-
-Dependencies come from Conan. **CGAL 5.6 or newer is required** — 5.5.x does
-not compile under recent Apple Clang.
-
-```bash
-brew install cmake ninja opencv ompl
-pip install conan && conan profile detect
-
-cd <this repo>/external/open-spite
-export CMAKE_POLICY_VERSION_MINIMUM=3.5     # CMake 4.x vs. older recipes
-conan install . --output-folder=build --build=missing \
-      -s build_type=Release -s compiler.cppstd=gnu17
-```
+[open-spite](https://github.com/parasollab/open-spite) itself is vendored as a
+git submodule and compiled as part of this build, so there is nothing to
+install for it — just remember to clone recursively below.
 
 ## Building
 
-### Core mode (no ROS)
+From scratch, including creating the workspace:
 
 ```bash
-cd ~/spited_ws/src/SPITE_D
-export CMAKE_POLICY_VERSION_MINIMUM=3.5           # macOS only
+# 1. create a colcon workspace
+mkdir -p ~/spited_ws/src
+cd ~/spited_ws/src
 
-cmake -B build-core -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_TOOLCHAIN_FILE=$PWD/external/open-spite/build/conan_toolchain.cmake
-                                                   # ^ macOS only, omit on Linux
-cmake --build build-core
-```
+# 2. clone this repository WITH its submodule
+git clone --recursive https://github.com/sai197161/SPITE_D.git
 
-open-spite is found automatically at `external/open-spite`. To build against a
-different checkout, set `SPITE_D_OPEN_SPITE_DIR` to its repository root (the
-directory containing its `CMakeLists.txt`).
-
-Targets are skipped gracefully when a dependency is missing: no OpenCV means no
-perception library, no OMPL means no roadmap builders, no
-`SPITE_D_OPEN_SPITE_DIR` means no certification code. **If an expected binary
-is missing, search the configure output for `skipped`** — that is almost always
-the reason.
-
-### ROS mode (ROS 2 Jazzy)
-
-```bash
+# 3. build
 cd ~/spited_ws
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-select spite_d
+
+# 4. make the package available to your shell
 source install/setup.bash
 ```
 
-No extra arguments are needed — the submodule supplies open-spite.
+That is the whole procedure — no CMake arguments, no separately installed
+open-spite. Expect the first build to take under a minute.
+
+If you forgot `--recursive`, the build warns that open-spite is missing and
+skips the certification targets. Fix it with:
+
+```bash
+cd ~/spited_ws/src/SPITE_D
+git submodule update --init --recursive
+```
+
+Targets are skipped rather than failing when an optional dependency is absent:
+no OpenCV means no perception library, no OMPL means no roadmap builders. **If
+an expected binary is missing, search the build output for `skipped`** — that
+is almost always why.
+
+Remember that `source install/setup.bash` is needed in **every** terminal that
+runs or inspects this package.
 
 ## Running the tests
 
 ```bash
-cd ~/spited_ws/src/SPITE_D
-ctest --test-dir build-core --output-on-failure
+cd ~/spited_ws
+ctest --test-dir build/spite_d --output-on-failure
 ```
 
 Current state: **6 of 8 pass; 2 are known-failing.**
@@ -184,14 +162,14 @@ understand a regression.
 Run one test alone while debugging:
 
 ```bash
-./build-core/tests/test_span_pipeline && echo PASS
+./build/spite_d/tests/test_span_pipeline && echo PASS
 ```
 
 If `test_open_spite` shows **Not Run**, it just hasn't been compiled — it is
 not in the default build target:
 
 ```bash
-cmake --build build-core --target test_open_spite
+cmake --build build/spite_d --target test_open_spite
 ```
 
 ### What each test verifies
@@ -215,10 +193,10 @@ geometric approximations used for certification).
 
 ```bash
 # Free-flying box robot in 3D
-./build-core/build_roadmap --out ~/rm --grow 1.0
+./build/spite_d/build_roadmap --out ~/rm --grow 1.0
 
 # UR5 arm: 6-DOF joint-space roadmap with per-link geometry
-./build-core/build_roadmap_ur5 --out ~/rm_ur5 --grow 1.0
+./build/spite_d/build_roadmap_ur5 --out ~/rm_ur5 --grow 1.0
 ```
 
 `--grow` is how many seconds to spend sampling — longer gives a denser
@@ -233,7 +211,7 @@ across a planned path twice — once certifying every frame, once with spans —
 and compares them:
 
 ```bash
-./build-core/demo_dynamic --roadmap ~/rm
+./build/spite_d/demo_dynamic --roadmap ~/rm
 ```
 
 ```
@@ -265,9 +243,9 @@ identical replan behavior in both modes (same path sizes every frame)
 Variations:
 
 ```bash
-./build-core/demo_dynamic --roadmap ~/rm --trace          # per-frame table
-./build-core/demo_dynamic --roadmap ~/rm --slices 4       # time-sliced spans
-./build-core/demo_dynamic --roadmap ~/rm --mode baseline  # single mode
+./build/spite_d/demo_dynamic --roadmap ~/rm --trace          # per-frame table
+./build/spite_d/demo_dynamic --roadmap ~/rm --slices 4       # time-sliced spans
+./build/spite_d/demo_dynamic --roadmap ~/rm --mode baseline  # single mode
 ```
 
 With `--slices 4` expect *more* geometry passes but a non-zero **expiries**
