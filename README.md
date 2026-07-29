@@ -135,6 +135,8 @@ Current state: **6 of 8 pass; 2 are known-failing.**
 6/8 Test #6: test_span ........................   Passed
 7/8 Test #7: test_span_pipeline ...............   ***Failed
 8/8 Test #8: test_perception ..................   Passed
+
+75% tests passed, 2 tests failed out of 8
 ```
 
 `test_validity_server` and `test_span_pipeline` each fail one assertion.
@@ -159,13 +161,6 @@ Run one test alone while debugging:
 
 ```bash
 ./build/spite_d/tests/test_span_pipeline && echo PASS
-```
-
-If `test_open_spite` shows **Not Run**, it just hasn't been compiled — it is
-not in the default build target:
-
-```bash
-cmake --build build/spite_d --target test_open_spite
 ```
 
 ### What each test verifies

@@ -26,8 +26,16 @@ set(SPITE_D_OPEN_SPITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/open-spite"
     CACHE PATH "Path to the open-spite source tree")
 
 if(EXISTS "${SPITE_D_OPEN_SPITE_DIR}/CMakeLists.txt")
+  # EXCLUDE_FROM_ALL keeps open-spite's examples and demos (which fetch OMPL
+  # and VAMP) out of this build. Its library still builds because we link
+  # against it, but its test binary would not -- while add_test() still
+  # registers the test, so ctest would report it as "Not Run". Opt that one
+  # target back in so the upstream suite actually runs.
   add_subdirectory(${SPITE_D_OPEN_SPITE_DIR} open_spite_build EXCLUDE_FROM_ALL)
   set(SPITE_D_HAVE_OPEN_SPITE TRUE)
+  if(TARGET test_open_spite)
+    set_property(TARGET test_open_spite PROPERTY EXCLUDE_FROM_ALL FALSE)
+  endif()
 else()
   # An empty external/open-spite means the repo was cloned without its
   # submodules; say so rather than failing deep inside add_subdirectory.
