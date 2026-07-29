@@ -1,19 +1,16 @@
-#include "spite_d/perception/uv_detector.hpp"
-
+#include "perception/uv_detector.hpp"
 #include <opencv2/imgproc.hpp>
-
 #include <cmath>
 
 namespace spite_d {
 
 namespace {
 
-// Row-segment box used while grouping U-map lines (port of UVbox +
-// merge_two_UVbox).
+// grouping U-map lines (port from map_manager)
 struct Segment {
-  int id;
-  int topParent;
-  cv::Rect bb;
+    int id;
+    int topParent;
+    cv::Rect bb;
 };
 
 void MergeInto(Segment& father, const Segment& son) {
@@ -24,14 +21,14 @@ void MergeInto(Segment& father, const Segment& son) {
   father.bb = cv::Rect(cv::Point(left, top), cv::Point(right, bottom));
 }
 
-}  // namespace
+}
 
 const std::vector<CameraFrameBox>& UvDetector::Detect(const cv::Mat& depth16u) {
-  CV_Assert(depth16u.type() == CV_16UC1);
-  ExtractUMap(depth16u);
-  ExtractUBoxes();
-  ExtractBoxes(depth16u);
-  return m_boxes;
+    CV_Assert(depth16u.type() == CV_16UC1);
+    ExtractUMap(depth16u);
+    ExtractUBoxes();
+    ExtractBoxes(depth16u);
+    return m_boxes;
 }
 
 void UvDetector::ExtractUMap(const cv::Mat& depth16u) {
@@ -195,4 +192,4 @@ void UvDetector::ExtractBoxes(const cv::Mat& depth16u) {
   }
 }
 
-}  // namespace spite_d
+}

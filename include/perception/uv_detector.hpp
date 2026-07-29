@@ -1,12 +1,6 @@
 #pragma once
 
-// U-map depth-image obstacle detector.
-//
-// Port of map_manager's UVdetector (Xu et al., "A real-time dynamic
-// obstacle tracking and mapping system for UAV navigation and collision
-// avoidance with an RGB-D camera") with the ROS and visualization code
-// removed. The algorithm is unchanged:
-//
+// port of map-manager's UVdetector
 //   1. Build the U-map: for every image column, histogram the depth
 //      values into bins (rows of the U-map). Obstacles show up as
 //      horizontal line segments of high bin counts.
@@ -16,24 +10,18 @@
 //      contiguous pixels inside the box's depth interval to recover the
 //      image-space vertical extent.
 //   4. Deproject to a camera-frame axis-aligned 3D box.
-//
-// Camera frame convention (matches the original): +x right, +y down,
-// +z forward (depth). Output boxes are in this camera frame; the
-// tracker transforms them to the world frame.
 
 #include <opencv2/core.hpp>
-
 #include <cstddef>
 #include <vector>
 
 namespace spite_d {
 
-/// One detection in the camera frame (meters).
 struct CameraFrameBox {
-  float x{0}, y{0}, z{0};              ///< Center.
-  float xWidth{0}, yWidth{0}, zWidth{0};  ///< Full extents.
-  cv::Rect depthRect;   ///< Pixel-space box on the (full-res) depth image.
-  cv::Rect birdRect;    ///< Bird's-view box (10mm units), used for tracking.
+    float x{0}, y{0}, z{0};
+    float xWidth{0}, yWidth{0}, zWidth{0};
+    cv::Rect depthRect;
+    cv::Rect birdRect;
 };
 
 class UvDetector {
@@ -41,7 +29,6 @@ class UvDetector {
   struct Params {
     double fx{608.087}, fy{608.179}, px{317.483}, py{234.116};
     /// Raw depth value -> millimeters is value/depthScale*1000
-    /// (e.g. 1000.0 when the sensor reports millimeters directly).
     double depthScale{1000.0};
     int minDistMm{10};
     int maxDistMm{8000};
@@ -73,4 +60,4 @@ class UvDetector {
   std::vector<CameraFrameBox> m_boxes;
 };
 
-}  // namespace spite_d
+}

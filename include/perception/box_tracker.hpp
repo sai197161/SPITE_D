@@ -22,9 +22,9 @@
 // rotation), matching the mentor pipeline's box3D convention; oriented
 // boxes from track history are a later refinement.
 
-#include "spite_d/common/types.hpp"
-#include "spite_d/perception/tracker.hpp"
-#include "spite_d/perception/uv_detector.hpp"
+#include "common/types.hpp"
+#include "perception/tracker.hpp"
+#include "perception/uv_detector.hpp"
 
 #include <cstdint>
 #include <deque>

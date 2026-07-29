@@ -7,7 +7,7 @@
 // horizon/dt/std growth parameters mirror ConstantVelocityPredictor.
 // Compiled only under ament (Linux).
 
-#include "spite_d/trajectory/predictor.hpp"
+#include "trajectory/predictor.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <spite_d/msg/obstacle_array.hpp>

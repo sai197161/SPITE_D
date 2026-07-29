@@ -1,4 +1,4 @@
-#include "spite_d/trajectory/predictor.hpp"
+#include "trajectory/predictor.hpp"
 
 #include <cassert>
 #include <cmath>

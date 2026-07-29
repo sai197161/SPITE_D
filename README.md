@@ -1,179 +1,269 @@
 # SPITE-D
 
 Perception-driven dynamic validity certification for roadmap-based motion
-planning. Extends [SPITE / RGG](https://parasollab.web.illinois.edu/research/spite/)
-from discrete obstacle relocations to continuously moving obstacles with
-predicted trajectories.
+planning.
 
-An RGB-D front end tracks obstacles; a predictor extrapolates each track over
-a horizon; the predicted trajectory is turned into SPITE certification
-geometry (over-approximation inflated by `+kσ`, under-approximation deflated
-by `−kσ`) and queried against the roadmap's precomputed swept-volume trees to
-label edges **Red** (certified invalid), **Green** (certified valid), or
-**Gray** (undecided). A planner replans over the surviving subgraph.
+A robot that plans with a **roadmap** (a precomputed graph of collision-free
+configurations, with edges for the motions between them) can answer planning
+queries quickly — but only while the world matches the one the roadmap was
+built in. When obstacles move, some edges become unsafe, and finding out which
+ones is expensive: it means re-checking robot geometry against obstacle
+geometry many times per second.
 
-**Spans** are the contribution: rather than rebuilding that geometry every
-frame, one prediction is frozen over the horizon (optionally cut into `k` time
-slices). Each frame then costs a single *conformance check* — is the observed
-obstacle still inside the prediction's inflated envelope at this instant? If
-so, all labels remain certified and lapsed slices expire by bookkeeping alone.
-The expensive path runs only on conformance violation, horizon exhaustion, or
-a new track.
+This package extends [SPITE / RGG](https://github.com/parasollab/open-spite),
+which handles obstacles that *jump* between discrete positions, to obstacles
+that **move continuously and whose future motion is predicted**.
 
-## Layout
+## How it works
+
+The runtime loop has five stages:
+
+1. **Perception** — a depth image is turned into tracked obstacle boxes
+   (position, size, velocity, and an uncertainty estimate) using a U-map
+   detector and a Kalman filter.
+2. **Prediction** — each track is extrapolated forward over a time *horizon*.
+   Uncertainty (σ) grows the further ahead you predict.
+3. **Certification** — the predicted trajectory becomes two geometric
+   approximations: an *over*-approximation (a box enclosing everywhere the
+   obstacle might plausibly be, inflated by `k·σ`) and an *under*-approximation
+   (spheres guaranteed to lie inside it, deflated by `k·σ`). Comparing these
+   against the roadmap labels every edge:
+   - **Green** — over-approximations don't touch ⇒ provably safe
+   - **Red** — under-approximations do touch ⇒ provably blocked
+   - **Gray** — neither ⇒ undecided
+4. **Planning** — shortest path over the non-Red edges, replanned whenever the
+   current path becomes blocked.
+5. **Spans** *(the contribution)* — instead of redoing step 3 every frame, one
+   prediction is **frozen** over its horizon. Each frame then costs only a
+   *conformance check*: is the obstacle still inside the envelope its
+   certification was computed against? While it is, every edge label stays
+   valid for free. The expensive work reruns only when the obstacle breaks its
+   prediction, the horizon runs out, or a new obstacle appears.
+
+Spans can optionally be cut into `k` **time slices**, so slices the clock has
+passed are dropped by bookkeeping alone — letting edges reopen *behind* a
+departing obstacle without rebuilding anything.
+
+## Repository layout
 
 ```
-include/spite_d/, src/
-  common/        shared plain-struct data contracts (no ROS, no Eigen)
-  perception/    U-map depth detector + box tracker (port of map_manager)
-  trajectory/    Predictor interface + constant-velocity implementation
-  spite/         ValidityServer: predictions -> SPITE geometry -> RGG labels
-  dynamic_map/   Span, SpanPipeline  (the contribution)
-  planner/       Dijkstra replanner + roadmap graph persistence
-  nodes/         thin rclcpp shims (ROS build only)
-tools/           offline roadmap builders, terminal ablation demo
-tests/           unit + integration tests (the executable specification)
-gazebo/worlds/   depth-collection simulation worlds
-launch/          pipeline launch file
+include/           headers, mirrored by src/
+  common/          shared data types (no ROS, no Eigen)
+  perception/      U-map depth detector, box tracker
+  trajectory/      predictor interface, constant-velocity predictor,
+                   Span + SpanPipeline (the contribution)
+  spite/           ValidityServer: predictions -> geometry -> edge labels
+  planner/         Dijkstra replanner, roadmap file format
+src/nodes/         thin ROS 2 wrappers (built only under colcon)
+tools/             offline roadmap builders, terminal ablation demo
+tests/             unit + integration tests
+gazebo/worlds/     simulation worlds for depth data collection
+launch/            ROS 2 launch files
 ```
 
-Everything except `src/nodes/` is ROS-free and unit-testable without a ROS
-installation. The build has two modes:
+Everything except `src/nodes/` is plain C++17 with **no ROS dependency**, so
+the whole pipeline builds and runs on a laptop without ROS. The build detects
+which mode it is in automatically:
 
-- **core mode** — plain CMake. Builds the libraries, offline tools, and tests.
-  Used for development on machines without ROS (e.g. macOS).
-- **ROS mode** — `colcon` / `ament_cmake` detected automatically. Additionally
-  builds the message interfaces and node executables.
+- **core mode** — plain CMake; libraries, offline tools, and tests.
+- **ROS mode** — under `colcon`; adds ROS message types and node executables.
 
-## Dependencies
+## Prerequisites
 
-`spite_d` links [open-spite](https://github.com/parasol-lab/open-spite) as a
-CMake subproject; its path is supplied at configure time via
-`SPITE_D_OPEN_SPITE_DIR` (pointing at the repo root — the directory containing
-open-spite's own `CMakeLists.txt`). open-spite in turn needs CGAL, Boost, GMP,
-MPFR, Eigen, FCL and nlohmann_json. OMPL is required for the roadmap builders.
+This package uses [open-spite](https://github.com/parasol-lab/open-spite) as a
+library. **Clone it first** — you pass its path to CMake:
 
-### Linux (ROS mode)
+```bash
+git clone https://github.com/parasol-lab/open-spite.git ~/open-spite
+```
+
+open-spite needs CGAL, Boost, GMP, MPFR, Eigen, FCL and nlohmann_json. OMPL is
+needed for the roadmap builders, OpenCV for perception.
+
+### Linux (Ubuntu, ROS 2 Jazzy)
 
 ```bash
 sudo apt install libcgal-dev libompl-dev libeigen3-dev libfcl-dev \
-                 nlohmann-json3-dev
+                 nlohmann-json3-dev libopencv-dev
 ```
 
-### macOS (core mode)
+### macOS
 
-CGAL and friends come from Conan; note **CGAL ≥ 5.6** is required — 5.5.x does
+Dependencies come from Conan. **CGAL 5.6 or newer is required** — 5.5.x does
 not compile under recent Apple Clang.
 
 ```bash
+brew install cmake ninja opencv ompl
 pip install conan && conan profile detect
-cd /path/to/open-spite
-export CMAKE_POLICY_VERSION_MINIMUM=3.5      # CMake 4.x vs. older recipes
+
+cd ~/open-spite
+export CMAKE_POLICY_VERSION_MINIMUM=3.5     # CMake 4.x vs. older recipes
 conan install . --output-folder=build --build=missing \
       -s build_type=Release -s compiler.cppstd=gnu17
 ```
 
-OpenCV (for the perception module) and OMPL come from Homebrew:
-
-```bash
-brew install opencv ompl
-```
-
 ## Building
 
-### Core mode
+### Core mode (no ROS)
 
 ```bash
-cd src/SPITE-D
-export CMAKE_POLICY_VERSION_MINIMUM=3.5
+cd ~/spited_ws/src/SPITE_D
+export CMAKE_POLICY_VERSION_MINIMUM=3.5           # macOS only
+
 cmake -B build-core -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DSPITE_D_OPEN_SPITE_DIR=/path/to/open-spite \
-      -DCMAKE_TOOLCHAIN_FILE=/path/to/open-spite/build/conan_toolchain.cmake
+      -DSPITE_D_OPEN_SPITE_DIR=$HOME/open-spite \
+      -DCMAKE_TOOLCHAIN_FILE=$HOME/open-spite/build/conan_toolchain.cmake
+                                                   # ^ macOS only, omit on Linux
 cmake --build build-core
-ctest --test-dir build-core --output-on-failure
 ```
 
-Targets degrade gracefully: without OpenCV the perception library is skipped,
-without OMPL the roadmap builders are skipped, without
-`SPITE_D_OPEN_SPITE_DIR` the validity and span-pipeline targets are skipped.
-Watch the configure output for `skipped` lines if an expected binary is
-missing.
+`SPITE_D_OPEN_SPITE_DIR` must point at open-spite's **repository root** — the
+directory containing its `CMakeLists.txt`.
 
-> Conan generates a single-configuration toolchain, so a `Debug` build fails to
-> find CGAL. For a debuggable build, keep `CMAKE_BUILD_TYPE=Release` and add
-> `-DCMAKE_CXX_FLAGS_RELEASE="-g -O0"` in a separate build directory.
+Targets are skipped gracefully when a dependency is missing: no OpenCV means no
+perception library, no OMPL means no roadmap builders, no
+`SPITE_D_OPEN_SPITE_DIR` means no certification code. **If an expected binary
+is missing, search the configure output for `skipped`** — that is almost always
+the reason.
 
 ### ROS mode (ROS 2 Jazzy)
 
 ```bash
-cd ~/ros2_ws          # workspace containing src/SPITE-D
+cd ~/spited_ws
 colcon build --packages-select spite_d \
-      --cmake-args -DSPITE_D_OPEN_SPITE_DIR=/path/to/open-spite
+      --cmake-args -DSPITE_D_OPEN_SPITE_DIR=$HOME/open-spite
 source install/setup.bash
 ```
 
-To avoid re-passing the path, pin it once in `~/.colcon/defaults.yaml`:
+To avoid repeating the path, put it in `~/.colcon/defaults.yaml`:
 
 ```yaml
 build:
   cmake-args:
-    - -DSPITE_D_OPEN_SPITE_DIR=/home/you/open-spite
+    - -DSPITE_D_OPEN_SPITE_DIR=/home/YOU/open-spite
 ```
 
-`--cmake-clean-cache` erases *all* cached `-D` settings, so any time you use it
-every `-D` you care about must be on the same command line — an empty
-`SPITE_D_OPEN_SPITE_DIR` silently drops the validity node and roadmap
-builders.
+> `colcon build --cmake-clean-cache` erases **all** cached `-D` settings. If you
+> use it, repeat every `-D` you need on the same command line, or the
+> certification targets silently vanish from the build.
 
-## Tests
+## Running the tests
 
-`ctest` runs eight tests; they double as the specification for each module.
+```bash
+cd ~/spited_ws/src/SPITE_D
+ctest --test-dir build-core --output-on-failure
+```
 
-| test | covers |
-| --- | --- |
-| `test_predictor` | constant-velocity extrapolation, σ growth, `k=0` ⇒ fixed horizon |
-| `test_replanner` | Dijkstra over the valid subgraph, blocked-path detection |
-| `test_validity_server` | full loop: obstacle crosses corridor → Red → detour → `Forget` → heal |
-| `test_roadmap_roundtrip` | graph + geometry serialization; reloaded roadmap reproduces labels |
-| `test_perception` | tracker vs. analytically rendered depth frames (position, velocity, stable IDs) |
-| `test_span` | envelope, conformance, refresh, trajectory slicing |
-| `test_span_pipeline` | soundness between rebuilds; amortization counts; slice expiry |
-| `test_open_spite` | upstream library's own suite |
+Every line should read `Passed`:
+
+```
+1/8 Test #1: test_open_spite ..................   Passed
+2/8 Test #2: test_predictor ...................   Passed
+...
+100% tests passed, 0 tests failed out of 8
+```
+
+The tests are plain C++ programs built on `assert`, so **exit code 0 means
+every assertion held**. There is no test framework and no partial credit: a
+test either passes silently or aborts at the first failed assertion, printing
+the file and line number. That line *is* the specification that was violated,
+which usually makes it the fastest way to understand a regression.
+
+Run one test alone while debugging:
+
+```bash
+./build-core/tests/test_span_pipeline && echo PASS
+```
+
+If `test_open_spite` shows **Not Run**, it just hasn't been compiled — it is
+not in the default build target:
+
+```bash
+cmake --build build-core --target test_open_spite
+```
+
+### What each test verifies
+
+| test | what it checks | why it matters |
+| --- | --- | --- |
+| `test_predictor` | A constant-velocity prediction lands where the arithmetic says, and uncertainty grows with lookahead. A zero growth rate reproduces the fixed-horizon scheme exactly. | This is the input contract for everything downstream; if it fails, no later result means anything. |
+| `test_replanner` | Shortest path over a small graph; blocking one edge forces the detour; a fully blocked graph yields no path. | Confirms the planner actually honours edge validity, in both directions of travel. |
+| `test_validity_server` | On a two-corridor roadmap: an obstacle crossing corridor A turns it **Red** while corridor B stays **Green**, the planner detours, and dropping the obstacle reopens the corridor. Also that obstacles vanishing from a frame stop blocking, and that many short-lived track IDs leave no residue. | The core certification loop — most geometry regressions surface here first. |
+| `test_roadmap_roundtrip` | A roadmap written to disk and read back yields identical graph data *and identical edge labels*. | The offline builder and the runtime are separate programs; this is the guarantee they agree. |
+| `test_perception` | The tracker runs against synthetically rendered depth images of a moving box and must recover position within 15 cm and velocity within 0.15 m/s while holding one stable track ID; two boxes must produce two distinct IDs. | Ground truth is known exactly here, which real sensor data can't offer. The tolerances reflect the U-map's depth quantization, not sloppiness. |
+| `test_span` | Envelope arithmetic, conformance decisions right at the boundary, horizon expiry, and trajectory slicing (including that neighbouring slices share a sample, so no gap opens between them). | The mathematical core of the contribution. |
+| `test_span_pipeline` | Over 30 frames with a conforming obstacle the expensive geometry path runs **twice**, not 30 times — while edge labels stay identical to the frame-by-frame result. An obstacle that deviates is caught and triggers a rebuild; with `k=4` slices a corridor reopens behind the obstacle using one geometry build and three expiries. | The contribution's central claim — cheaper *and* equally correct — written as assertions. |
+| `test_open_spite` | The upstream library's own suite. | Separates "we broke something" from "the library changed under us". |
 
 ## Offline tools
 
-Build a roadmap once, then reuse it at runtime. Both builders write
-`roadmap_graph.txt` (vertices, edges, costs, joint configurations) and
-`roadmap_geoms.txt` (per-element OBB and spline approximations).
+A roadmap is built once, saved, and reused at runtime. Both builders write
+`roadmap_graph.txt` (vertices, edges, costs) and `roadmap_geoms.txt` (the
+geometric approximations used for certification).
 
 ```bash
-# Rigid box robot in SE(3)
+# Free-flying box robot in 3D
 ./build-core/build_roadmap --out ~/rm --grow 1.0
 
-# UR5: 6-DOF joint-space PRM with per-link swept volumes
+# UR5 arm: 6-DOF joint-space roadmap with per-link geometry
 ./build-core/build_roadmap_ur5 --out ~/rm_ur5 --grow 1.0
 ```
 
-Static obstacles default to two pillars; override with `--obstacles FILE`
-(one axis-aligned box per line: `xmin ymin zmin xmax ymax zmax`).
+`--grow` is how many seconds to spend sampling — longer gives a denser
+roadmap. Static obstacles default to two pillars and can be overridden with
+`--obstacles FILE`, one axis-aligned box per line as
+`xmin ymin zmin xmax ymax zmax`.
 
-### Ablation demo
+### The ablation demo
 
-Runs the same simulated obstacle through frame-by-frame and span-based
-certification and reports geometry passes, update timings, and whether the two
-modes made identical replanning decisions.
+The quickest way to see what this package does. It drives a simulated obstacle
+across a planned path twice — once certifying every frame, once with spans —
+and compares them:
 
 ```bash
-./build-core/demo_dynamic --roadmap ~/rm_ur5              # both modes
-./build-core/demo_dynamic --roadmap ~/rm --slices 4       # time-sliced spans
-./build-core/demo_dynamic --roadmap ~/rm --trace          # per-frame table
+./build-core/demo_dynamic --roadmap ~/rm
 ```
 
-`--dump-json FILE` additionally writes per-frame state (roadmap, labels,
-envelope, path) for external plotting; `tools/make_viewer.py` renders it as a
-standalone HTML animation.
+```
+mode         frames geom-passes  expiries  replans     update ms mean/med/max
+baseline         40          40         0        1        1.385 /  1.423 /  4.008
+spans            40           3         0        1        0.141 /  0.000 /  2.057
 
-## Running the pipeline
+span speedup: 9.8x mean update (conforming frames are ~free: median 0.0001 ms),
+              40 -> 3 expensive geometry passes
+identical replan behavior in both modes (same path sizes every frame)
+```
+
+**Reading the output:**
+
+- **geom-passes** — how many times the expensive work (build obstacle
+  geometry, query the roadmap) actually ran. Baseline does it every frame by
+  definition; spans should show a small number. *This is the headline result.*
+- **update ms** — wall-clock per frame. The span **median** is essentially zero
+  because a conforming frame is a handful of floating-point comparisons. The
+  **max** is similar for both, because one span rebuild costs about the same as
+  one baseline frame — spans reduce average cost, not worst case.
+- **replans** — how many times the path had to be recomputed.
+- **The last line is the correctness check.** Both modes must produce the same
+  path on every frame. If it instead prints `NOTE: modes diverged`, spans
+  changed a planning decision and something is wrong — the speedup means
+  nothing without this line.
+
+Variations:
+
+```bash
+./build-core/demo_dynamic --roadmap ~/rm --trace          # per-frame table
+./build-core/demo_dynamic --roadmap ~/rm --slices 4       # time-sliced spans
+./build-core/demo_dynamic --roadmap ~/rm --mode baseline  # single mode
+```
+
+With `--slices 4` expect *more* geometry passes but a non-zero **expiries**
+count: slicing costs more per rebuild and buys the ability to release the
+obstacle's past for free. That trade-off is what the `k` parameter controls.
+
+`--dump-json FILE` writes per-frame state for external plotting;
+
+## Running the full pipeline (ROS 2)
 
 ```bash
 ros2 launch spite_d pipeline.launch.py \
@@ -182,47 +272,45 @@ ros2 launch spite_d pipeline.launch.py \
     roadmap_geoms:=$HOME/rm/roadmap_geoms.txt
 ```
 
-Starts Gazebo, the `ros_gz_bridge`, and the three nodes. `headless:=false`
-opens the Gazebo GUI (default is server-only with offscreen rendering, which
-is what a machine without a display needs). Worlds live in `gazebo/worlds/`:
-`depth_single_cross` (one actor crossing at constant speed — clean ground
-truth) and `depth_multi_cross` (three actors, association stress).
+Starts Gazebo, the Gazebo↔ROS bridge, and the three nodes. Add
+`headless:=false` to open the Gazebo window; the default runs without a
+display, which is what a remote machine needs.
 
-Topics:
+Worlds in `gazebo/worlds/`: `depth_single_cross` has one actor walking across
+the camera's view at constant speed (clean ground truth); `depth_multi_cross`
+has three, including two that cross each other in the image.
 
-| topic | type |
-| --- | --- |
-| `/camera/depth_image`, `/camera/camera_info` | sensor input (bridged from Gazebo) |
-| `/spite_d_perception/obstacles` | `spite_d/ObstacleArray` |
-| `/spite_d_prediction/predictions` | `spite_d/PredictedTrajectoryArray` |
-| `/spite_d_validity/path` | `nav_msgs/Path` |
+Check data is flowing, from a second terminal:
 
-Every terminal that inspects custom messages needs `source install/setup.bash`,
-otherwise `ros2 topic echo` reports the message type as invalid.
+```bash
+source install/setup.bash          # required in EVERY terminal
+ros2 topic hz   /camera/depth_image                   # sensor data arriving
+ros2 topic echo /spite_d_perception/obstacles --once  # obstacles detected
+ros2 topic echo /spite_d_validity/path --once         # planned path
+```
 
-`tools/setup_remote_gui.sh` sets up browser-based VNC access (RViz / Gazebo
-over the network) on a headless development machine.
+If `ros2 topic echo` says *"message type is invalid"*, that terminal hasn't
+sourced `install/setup.bash`.
 
-## Status
+`tools/setup_remote_gui.sh` sets up browser-based access to Gazebo and RViz on
+a machine with no monitor.
 
-Validated: the perception → prediction → validity → replanning pipeline runs
-end-to-end in Gazebo; the span mechanism is validated by unit tests
-(soundness, amortization, slice expiry) and measured in controlled kinematic
-ablations on both the box and UR5 roadmaps.
+## Status and known gaps
 
-Known gaps, in current priority order:
+Validated: the perception → prediction → certification → replanning pipeline
+runs end to end in Gazebo, and the span mechanism is verified by the test suite
+and measured on both a free-flying-robot roadmap and a UR5 arm roadmap.
 
-1. **Gazebo-in-the-loop spans** — `validity_node` still calls `ValidityServer`
-   directly every frame; it does not yet use `SpanPipeline`.
-2. **Gray edges** — treated as blocked in the deployed node and as traversable
-   in `demo_dynamic`; the two should become one explicit policy, and
-   fine-grained (FCL) resolution of Gray is unimplemented (`resolveGray` is a
-   stub).
-3. **Nonlinear trajectories** — spans assume a locally linear prediction;
-   curved and multimodal predictions need per-slice tightening and an oriented
-   (along-track / cross-track) envelope.
-4. **Confidence-based prediction** — only constant velocity exists; the
-   `Predictor` interface is the intended drop-in point.
-5. **Tracker robustness** — no continuity filter (map_manager's vote-history
-   gate was not ported), which shows up as track-ID churn on walking actors;
-   obstacle boxes are axis-aligned rather than oriented.
+Open items, roughly in priority order:
+
+1. **Spans are not yet used by the ROS node** — `validity_node` still
+   recertifies every frame. Span code is exercised by the tests and the offline
+   demo only.
+2. **Gray edges** are treated as blocked — safe but conservative. Resolving
+   them with a fine-grained collision check is unimplemented.
+3. **Curved and multi-modal predictions** — spans assume a locally straight
+   prediction; curved motion makes the single enclosing box loose.
+4. **Only constant-velocity prediction exists.** Better predictors plug into
+   the same `Predictor` interface.
+5. **Tracker robustness** — no continuity filter, so track IDs churn on real
+   data; obstacle boxes are axis-aligned rather than oriented.

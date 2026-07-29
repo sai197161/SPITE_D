@@ -10,9 +10,9 @@
 //
 // Same two-corridor roadmap as test_validity_server.
 
-#include "spite_d/dynamic_map/span_pipeline.hpp"
-#include "spite_d/spite/validity_server.hpp"
-#include "spite_d/trajectory/predictor.hpp"
+#include "trajectory/span_pipeline.hpp"
+#include "spite/validity_server.hpp"
+#include "trajectory/predictor.hpp"
 
 #include "DynamicRoadmapTool.h"
 

@@ -9,8 +9,8 @@
 //     reloaded via DynamicRoadmapTool::ReadGeometriesFromFile.
 // Loading the graph requires neither OMPL nor open-spite.
 
-#include "spite_d/common/types.hpp"
-#include "spite_d/planner/replanner.hpp"
+#include "common/types.hpp"
+#include "planner/replanner.hpp"
 
 #include <string>
 #include <vector>
@@ -44,4 +44,4 @@ bool WriteRoadmapGraph(const RoadmapGraph& graph, const std::string& path);
 /// Reads either version. Returns false if missing or malformed.
 bool ReadRoadmapGraph(RoadmapGraph& graph, const std::string& path);
 
-}  // namespace spite_d
+}

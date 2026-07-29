@@ -1,4 +1,4 @@
-#include "spite_d/dynamic_map/span.hpp"
+#include "trajectory/span.hpp"
 
 #include <algorithm>
 #include <cmath>

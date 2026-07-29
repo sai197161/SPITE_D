@@ -23,7 +23,7 @@
 // than PRM's boost graph so no Boost.Graph templates are instantiated
 // here (keeps us independent of the Boost version OMPL was built with).
 
-#include "spite_d/planner/roadmap_io.hpp"
+#include "planner/roadmap_io.hpp"
 
 #include "DynamicRoadmapTool.h"
 

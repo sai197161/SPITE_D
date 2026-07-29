@@ -1,6 +1,6 @@
 // Pure Span semantics: interpolation, envelope, conformance, expiry.
 
-#include "spite_d/dynamic_map/span.hpp"
+#include "trajectory/span.hpp"
 
 #include <cassert>
 #include <cmath>

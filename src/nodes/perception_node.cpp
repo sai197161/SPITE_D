@@ -10,7 +10,7 @@
 // z up) of the SDF model. The optical-frame rotation handed to the
 // tracker is derived from it. Compiled only under ament (Linux).
 
-#include "spite_d/perception/box_tracker.hpp"
+#include "perception/box_tracker.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>

@@ -1,4 +1,4 @@
-#include "spite_d/perception/box_tracker.hpp"
+#include "perception/box_tracker.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -36,7 +36,7 @@ bool Associated(const cv::Rect& a, const cv::Rect& b, float overlapThreshold) {
   return dist <= metric;
 }
 
-}  // namespace
+} 
 
 BoxTracker::BoxTracker(const Params& params)
     : m_params(params), m_detector(params.detector) {}

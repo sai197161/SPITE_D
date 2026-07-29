@@ -15,11 +15,11 @@
 // Usage: demo_dynamic --roadmap DIR [--frames N] [--hz F]
 //                     [--mode baseline|spans|both] [--trace]
 
-#include "spite_d/dynamic_map/span_pipeline.hpp"
-#include "spite_d/planner/replanner.hpp"
-#include "spite_d/planner/roadmap_io.hpp"
-#include "spite_d/spite/validity_server.hpp"
-#include "spite_d/trajectory/predictor.hpp"
+#include "trajectory/span_pipeline.hpp"
+#include "planner/replanner.hpp"
+#include "planner/roadmap_io.hpp"
+#include "spite/validity_server.hpp"
+#include "trajectory/predictor.hpp"
 
 #include "DynamicRoadmapTool.h"
 

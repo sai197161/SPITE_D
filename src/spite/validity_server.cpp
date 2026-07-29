@@ -1,4 +1,4 @@
-#include "spite_d/spite/validity_server.hpp"
+#include "spite/validity_server.hpp"
 
 #include "DynamicRoadmapTool.h"
 #include "Geometry/SimpleGeometries.h"

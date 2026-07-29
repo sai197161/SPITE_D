@@ -6,7 +6,7 @@
 // track id against the known ground truth. Camera pose is identity, so
 // the world frame equals the camera frame (+x right, +y down, +z fwd).
 
-#include "spite_d/perception/box_tracker.hpp"
+#include "perception/box_tracker.hpp"
 
 #include <cassert>
 #include <cmath>

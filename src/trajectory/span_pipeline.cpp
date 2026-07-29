@@ -1,4 +1,4 @@
-#include "spite_d/dynamic_map/span_pipeline.hpp"
+#include "trajectory/span_pipeline.hpp"
 
 namespace spite_d {
 

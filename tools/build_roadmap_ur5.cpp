@@ -17,7 +17,7 @@
 //   build_roadmap_ur5 --out DIR [--grow SECONDS] [--edge-samples N]
 //                     [--obstacles FILE]   # AABBs, one per line
 
-#include "spite_d/planner/roadmap_io.hpp"
+#include "planner/roadmap_io.hpp"
 
 #include "DynamicRoadmapTool.h"
 #include "ur5_fk.hpp"

@@ -6,9 +6,9 @@
 //   edge (2,3): (0,5,0) -> (2,5,0)   -- far away, must stay valid
 // Obstacle: 0.3-halfwidth cube at x=1 moving +y through the first corridor.
 
-#include "spite_d/planner/replanner.hpp"
-#include "spite_d/spite/validity_server.hpp"
-#include "spite_d/trajectory/predictor.hpp"
+#include "planner/replanner.hpp"
+#include "spite/validity_server.hpp"
+#include "trajectory/predictor.hpp"
 
 #include "DynamicRoadmapTool.h"
 

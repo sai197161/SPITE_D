@@ -15,7 +15,7 @@
 // This module is deliberately open-spite-free and ROS-free: pure math
 // over common/types.hpp, unit-testable anywhere.
 
-#include "spite_d/common/types.hpp"
+#include "common/types.hpp"
 
 #include <cstddef>
 #include <optional>

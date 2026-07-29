@@ -7,7 +7,7 @@
 // predictors. Downstream consumers (spite validity updates, and later
 // span construction in dynamic_map) depend only on this interface.
 
-#include "spite_d/common/types.hpp"
+#include "common/types.hpp"
 
 namespace spite_d {
 

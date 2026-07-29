@@ -58,11 +58,11 @@ endif()
 # Spans (the temporal contribution): pure span math always builds;
 # the amortization pipeline needs the validity server.
 add_library(spite_d_dynamic_map
-  src/dynamic_map/span.cpp
+  src/trajectory/span.cpp
 )
 target_link_libraries(spite_d_dynamic_map PUBLIC spite_d_core)
 if(SPITE_D_HAVE_OPEN_SPITE)
-  target_sources(spite_d_dynamic_map PRIVATE src/dynamic_map/span_pipeline.cpp)
+  target_sources(spite_d_dynamic_map PRIVATE src/trajectory/span_pipeline.cpp)
   target_link_libraries(spite_d_dynamic_map
     PUBLIC spite_d_validity spite_d_trajectory)
 endif()
@@ -173,8 +173,14 @@ if(ament_cmake_FOUND)
     endif()
   endif()
 
-  install(DIRECTORY launch gazebo rviz
-          DESTINATION share/${PROJECT_NAME})
+  # Only install asset directories that exist: empty ones (e.g. rviz/)
+  # do not survive a git clone, and a missing directory here fails the
+  # whole build for anyone cloning the repo.
+  foreach(_asset_dir launch gazebo rviz config)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_asset_dir}")
+      install(DIRECTORY ${_asset_dir} DESTINATION share/${PROJECT_NAME})
+    endif()
+  endforeach()
   install(DIRECTORY include/ DESTINATION include)
 
   ament_export_include_directories(include)

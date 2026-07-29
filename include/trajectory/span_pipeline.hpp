@@ -24,10 +24,10 @@
 // ValidityServer's geometry sigmaGain: the envelope checked is then
 // exactly the envelope the geometry was built from.
 
-#include "spite_d/common/types.hpp"
-#include "spite_d/dynamic_map/span.hpp"
-#include "spite_d/spite/validity_server.hpp"
-#include "spite_d/trajectory/predictor.hpp"
+#include "common/types.hpp"
+#include "trajectory/span.hpp"
+#include "spite/validity_server.hpp"
+#include "trajectory/predictor.hpp"
 
 #include <cstdint>
 #include <map>

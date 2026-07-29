@@ -4,9 +4,9 @@
 //      a reloaded ValidityServer reproduces the same classification as
 //      the in-memory one (same scenario as test_validity_server).
 
-#include "spite_d/planner/roadmap_io.hpp"
-#include "spite_d/spite/validity_server.hpp"
-#include "spite_d/trajectory/predictor.hpp"
+#include "planner/roadmap_io.hpp"
+#include "spite/validity_server.hpp"
+#include "trajectory/predictor.hpp"
 
 #include "DynamicRoadmapTool.h"
 

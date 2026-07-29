@@ -1,4 +1,4 @@
-#include "spite_d/planner/roadmap_io.hpp"
+#include "planner/roadmap_io.hpp"
 
 #include <fstream>
 
@@ -77,4 +77,4 @@ bool ReadRoadmapGraph(RoadmapGraph& graph, const std::string& path) {
   return true;
 }
 
-}  // namespace spite_d
+}

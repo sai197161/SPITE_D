@@ -12,9 +12,9 @@
 //              start_vid, goal_vid, sigma_gain
 // Compiled only under ament (Linux).
 
-#include "spite_d/planner/replanner.hpp"
-#include "spite_d/planner/roadmap_io.hpp"
-#include "spite_d/spite/validity_server.hpp"
+#include "planner/replanner.hpp"
+#include "planner/roadmap_io.hpp"
+#include "spite/validity_server.hpp"
 
 #include "DynamicRoadmapTool.h"
 

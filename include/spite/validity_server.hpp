@@ -18,7 +18,7 @@
 // Gray elements can optionally be resolved with a fine collision check
 // (fcl) or left lazy for the replanner to resolve on demand.
 
-#include "spite_d/common/types.hpp"
+#include "common/types.hpp"
 
 #include <map>
 #include <memory>

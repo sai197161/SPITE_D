@@ -1,13 +1,8 @@
 #pragma once
 
 // Multi-object tracking interface for the perception module.
-//
-// The first implementation ports map_manager's UV-detector + Kalman
-// tracker (OpenCV/Eigen internals, originally ROS1) behind this
-// interface. The node shim feeds it RGB-D frames; everything below the
-// shim is ROS-free and testable offline from recorded frames.
 
-#include "spite_d/common/types.hpp"
+#include "common/types.hpp"
 
 #include <vector>
 
@@ -21,15 +16,15 @@ struct DepthFrame {
   int height{0};
   double fx{0}, fy{0}, cx{0}, cy{0};
   double stamp{0.0};
-  Pose3 cameraPose;  ///< Camera-to-world transform at this stamp.
-  const uint16_t* depth{nullptr};  ///< Borrowed; valid for the call only.
+  Pose3 cameraPose;  ///< Camera-to-world transform
+  const uint16_t* depth{nullptr}; 
 };
 
 class Tracker {
  public:
   virtual ~Tracker() = default;
 
-  /// Ingest one frame and return the current set of tracked obstacles
+  /// input one frame and output the current set of tracked obstacles
   /// (world frame, with velocities and covariances).
   virtual std::vector<TrackedObstacle> Update(const DepthFrame& frame) = 0;
 };
