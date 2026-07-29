@@ -198,7 +198,7 @@ roadmap. Static obstacles default to two pillars and can be overridden with
 ### The ablation demo
 
 The quickest way to see what this package does. It drives a simulated obstacle
-across a planned path twice — once certifying every frame, once with spans —
+across a planned path twice (once certifying every frame, once with spans)
 and compares them:
 
 ```bash
