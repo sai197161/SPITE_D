@@ -94,7 +94,10 @@ int main() {
   assert(server.GetVertexValidity(1) == V::VALID);
 
   // Replanner sees the blocked edge through the validity predicate.
-  Replanner planner(4, {{0, 1, 1.0}, {1, 3, 5.5}, {0, 2, 5.0}, {2, 3, 1.0}});
+  // Costs must make the direct route (0-1-3, total 2.0) strictly cheaper
+  // than the detour (0-2-3, total 6.0). Otherwise reopening corridor (0,1)
+  // would not change the plan and the assertions below would be vacuous.
+  Replanner planner(4, {{0, 1, 1.0}, {1, 3, 1.0}, {0, 2, 5.0}, {2, 3, 1.0}});
   const auto isValid = [&server](size_t a, size_t b) {
     // Edges absent from the roadmap geometry (connectors 1-3, 0-2 here)
     // default to VALID in the tool; only certified-INVALID edges block.
