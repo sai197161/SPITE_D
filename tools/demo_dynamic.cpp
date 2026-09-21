@@ -107,6 +107,7 @@ struct ModeResult {
   int replans = 0;
   std::vector<double> updateMs;
   std::vector<size_t> pathSizes;
+  ValidityServer::Timings timings;
   std::vector<FrameDump> frames;
 
   double Mean() const {
@@ -273,6 +274,7 @@ ModeResult RunMode(const std::string& name, const Options& opt,
       useSpans ? pipeline.GetStats().rebuilds * std::max<size_t>(1, opt.slices)
                : size_t(opt.frames);
   result.expiries = useSpans ? pipeline.GetStats().expiries : 0;
+  result.timings = server.GetTimings();
   return result;
 }
 
@@ -446,6 +448,28 @@ int main(int argc, char** argv) {
     std::printf("%-11s %7d %11zu %9zu %8d %12.3f /%7.3f /%7.3f\n",
                 r.name.c_str(), opt.frames, r.geometryRebuilds, r.expiries,
                 r.replans, r.Mean(), r.Median(), r.Max());
+
+  // Where the expensive path actually spends its time. Geometry
+  // construction is per-obstacle and independent of the roadmap; the tree
+  // query scales with roadmap size and body count. Whichever dominates is
+  // the one worth attacking.
+  std::printf("\ncertification breakdown (per geometry build, ms)\n");
+  std::printf("%-11s %8s %9s %8s %9s %8s\n",
+              "mode", "builds", "obb-fit", "spheres", "tree", "total");
+  for (const auto& r : results) {
+    const auto& t = r.timings;
+    const double n = t.passes ? double(t.passes) : 1.0;
+    std::printf("%-11s %8zu %9.3f %8.3f %9.3f %8.3f\n", r.name.c_str(),
+                t.passes, t.obbFitMs / n, t.spheresMs / n, t.treeMs / n,
+                t.TotalMs() / n);
+  }
+  if (!results.empty() && results[0].timings.TotalMs() > 0) {
+    const auto& t = results[0].timings;
+    std::printf("baseline share: obb-fit %.0f%%, spheres %.0f%%, tree %.0f%%\n",
+                100.0 * t.obbFitMs / t.TotalMs(),
+                100.0 * t.spheresMs / t.TotalMs(),
+                100.0 * t.treeMs / t.TotalMs());
+  }
 
   if (results.size() == 2) {
     const auto& base = results[0];

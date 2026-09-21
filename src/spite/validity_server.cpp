@@ -5,6 +5,7 @@
 #include "OverApprox.h"
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -57,6 +58,22 @@ struct ValidityServer::Impl {
   /// this, track-id churn allocates a fresh slot per id forever and the
   /// reconciliation pass grows without bound.
   std::vector<size_t> freeSlots;
+  Timings timings;
+
+  /// Wall-clock milliseconds spent running fn().
+  template <typename F>
+  static double TimeMs(F&& fn) {
+    const auto t0 = std::chrono::steady_clock::now();
+    fn();
+    return std::chrono::duration<double, std::milli>(
+               std::chrono::steady_clock::now() - t0).count();
+  }
+
+  /// ShallowUpdate is where the AABB trees are actually queried, so it
+  /// is timed separately from geometry construction everywhere it runs.
+  void TimedShallowUpdate() {
+    timings.treeMs += TimeMs([&] { drm->ShallowUpdate(); });
+  }
 
   size_t AcquireSlot() {
     if (freeSlots.empty()) return nextSlot++;
@@ -84,11 +101,16 @@ struct ValidityServer::Impl {
       AppendCorners(traj.poses[i], half, cloud);
     }
     OrientedBoundingBox obb;
-    open_spite::GetBoundingBox(cloud, obb);
+    timings.obbFitMs += TimeMs([&] {
+      // The minimum-volume fit, not the corner cloud above: the cloud is
+      // just transforms, this is the search.
+      open_spite::GetBoundingBox(cloud, obb);
+    });
     drm->UpdateObstacleOBB(slot, obb);
 
     // Under-approximation: inscribed spheres along the path, -k*sigma;
     // vanished radii contribute nothing (no false REDs).
+    const auto t0 = std::chrono::steady_clock::now();
     const double baseRadius = *std::min_element(traj.halfExtents.begin(),
                                                 traj.halfExtents.end());
     std::vector<DynamicRoadmapTool::Sphere> spheres;
@@ -104,6 +126,9 @@ struct ValidityServer::Impl {
       spheres.push_back({Point3d(t[0], t[1], t[2]), radius});
     }
     drm->UpdateObstacleSpheres(slot, spheres);
+    timings.spheresMs += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+    ++timings.passes;
   }
 
   /// Empty a slot so reconciliation drops its contributions. (A far
@@ -135,7 +160,7 @@ void ValidityServer::Update(
     impl.BuildSlotGeometry(it->second, traj);
   }
 
-  impl.drm->ShallowUpdate();
+  impl.TimedShallowUpdate();
 }
 
 void ValidityServer::UpdateSlices(
@@ -149,7 +174,7 @@ void ValidityServer::UpdateSlices(
                                    impl.AcquireSlot()).first;
     impl.BuildSlotGeometry(it->second, slices[s]);
   }
-  impl.drm->ShallowUpdate();
+  impl.TimedShallowUpdate();
 }
 
 void ValidityServer::ExpireSlices(int32_t obstacleId,
@@ -163,7 +188,7 @@ void ValidityServer::ExpireSlices(int32_t obstacleId,
   }
   // Bookkeeping only: parked slots are re-reconciled, no tree queries
   // against real geometry. This is the cheap-expiry win of slicing.
-  if (any) impl.drm->ShallowUpdate();
+  if (any) impl.TimedShallowUpdate();
 }
 
 void ValidityServer::Forget(int32_t obstacleId) {
@@ -185,7 +210,7 @@ void ValidityServer::Forget(int32_t obstacleId) {
       ++sit;
     }
   }
-  if (any) impl.drm->ShallowUpdate();
+  if (any) impl.TimedShallowUpdate();
 }
 
 void ValidityServer::RetainOnly(const std::vector<int32_t>& activeIds) {
@@ -212,7 +237,7 @@ void ValidityServer::RetainOnly(const std::vector<int32_t>& activeIds) {
     any = true;
   }
   // One reconciliation pass no matter how many tracks were dropped.
-  if (any) impl.drm->ShallowUpdate();
+  if (any) impl.TimedShallowUpdate();
 }
 
 ValidityServer::Validity ValidityServer::GetVertexValidity(size_t vid) const {
@@ -223,6 +248,12 @@ ValidityServer::Validity ValidityServer::GetEdgeValidity(size_t src,
                                                          size_t tgt) const {
   return FromTool(m_impl->drm->GetEdgeValidity(src, tgt));
 }
+
+const ValidityServer::Timings& ValidityServer::GetTimings() const {
+  return m_impl->timings;
+}
+
+void ValidityServer::ResetTimings() { m_impl->timings = Timings{}; }
 
 std::vector<std::pair<size_t, size_t>> ValidityServer::BlockedEdges() const {
   std::vector<std::pair<size_t, size_t>> blocked;

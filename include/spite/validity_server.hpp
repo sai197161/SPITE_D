@@ -78,6 +78,24 @@ class ValidityServer {
   /// Edges currently classified INVALID or UNKNOWN, for the replanner.
   std::vector<std::pair<size_t, size_t>> BlockedEdges() const;
 
+  /// Where certification time goes. Accumulated across every Update /
+  /// UpdateSlices call, so divide by `passes` for a per-rebuild figure.
+  ///
+  /// The split matters because the two halves scale with different
+  /// things: geometry construction is per-obstacle and independent of
+  /// the roadmap, while the tree query grows with roadmap size and body
+  /// count. Which one dominates decides whether the useful lever is a
+  /// cheaper bounding volume or fewer queries.
+  struct Timings {
+    double obbFitMs{0};    ///< fitting the over-approximation box (MVBB)
+    double spheresMs{0};   ///< building the under-approximation spheres
+    double treeMs{0};      ///< ShallowUpdate: AABB tree queries + reconcile
+    size_t passes{0};      ///< geometry builds contributing to the above
+    double TotalMs() const { return obbFitMs + spheresMs + treeMs; }
+  };
+  const Timings& GetTimings() const;
+  void ResetTimings();
+
  private:
   struct Impl;
   std::unique_ptr<Impl> m_impl;
