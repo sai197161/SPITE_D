@@ -222,7 +222,7 @@ if(ament_cmake_FOUND)
   # Only install asset directories that exist: empty ones (e.g. rviz/)
   # do not survive a git clone, and a missing directory here fails the
   # whole build for anyone cloning the repo.
-  foreach(_asset_dir launch gazebo rviz config)
+  foreach(_asset_dir launch gazebo rviz config demo_roadmap)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_asset_dir}")
       install(DIRECTORY ${_asset_dir} DESTINATION share/${PROJECT_NAME})
     endif()

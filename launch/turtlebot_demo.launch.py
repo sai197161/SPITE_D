@@ -18,15 +18,9 @@
 ##   cam  @----> . . . . . . . .
 ##  (-2,0)   x   . . . . . . . .      camera at one edge looking down +x
 ##
-## Usage:
+## Usage (a matching roadmap ships with the package):
 ##   ros2 launch spite_d turtlebot_demo.launch.py \
-##       roadmap_graph:=$HOME/rm/roadmap_graph.txt \
-##       roadmap_geoms:=$HOME/rm/roadmap_geoms.txt
-##
-## Build the matching roadmap with:
-##   build_roadmap --out ~/rm --grow 0.3 \
-##       --env-lo -2.0 --env-hi 2.0 --z-lo 0.05 --z-hi 0.25 \
-##       --robot-half 0.14 0.15 0.10
+##       depth_topic:=/camera/depth/image_raw
 
 import os
 
@@ -42,9 +36,18 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     pkg_share = get_package_share_directory('spite_d')
 
+    # A roadmap for this 4m x 4m setup ships with the package, so there is
+    # nothing to generate and OMPL is not needed to run the demo. Override
+    # these only if you built your own.
+    default_roadmap = os.path.join(pkg_share, 'demo_roadmap')
+
     args = [
-        DeclareLaunchArgument('roadmap_graph'),
-        DeclareLaunchArgument('roadmap_geoms'),
+        DeclareLaunchArgument(
+            'roadmap_graph',
+            default_value=os.path.join(default_roadmap, 'roadmap_graph.txt')),
+        DeclareLaunchArgument(
+            'roadmap_geoms',
+            default_value=os.path.join(default_roadmap, 'roadmap_geoms.txt')),
 
         # Depth topics differ by camera and driver. On a Waffle with a
         # RealSense these are often /camera/depth/image_rect_raw and

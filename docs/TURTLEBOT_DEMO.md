@@ -40,9 +40,13 @@ cd ~/spited_ws/src/SPITE_D && git submodule update --init --recursive
 Dependencies, if the build complains about missing headers:
 
 ```bash
-sudo apt install libcgal-dev libompl-dev libeigen3-dev libfcl-dev \
+sudo apt install libcgal-dev libeigen3-dev libfcl-dev \
                  nlohmann-json3-dev libopencv-dev
 ```
+
+(OMPL is not in that list. It is only needed to generate roadmaps, and a
+roadmap for this demo ships with the package. If you see
+`build_roadmap tool skipped` in the build output, that is expected.)
 
 Sanity check before touching the robot — this needs no hardware:
 
@@ -50,30 +54,16 @@ Sanity check before touching the robot — this needs no hardware:
 ctest --test-dir build/spite_d        # expect 8/8 passing
 ```
 
-## 2. Build a roadmap
+## 2. The roadmap
 
-This is a one-time offline step. It samples collision-free robot
-positions in a 4 m × 4 m area and precomputes the geometry used for
-certification.
+Nothing to do here — a roadmap is bundled with the package and the launch
+file picks it up automatically. It covers a 4 m x 4 m area just above the
+floor (1373 positions, ~13k motions between them), sized for a TurtleBot3
+Waffle footprint.
 
-```bash
-./build/spite_d/build_roadmap --out ~/rm --grow 0.3 \
-    --env-lo -2.0 --env-hi 2.0 \
-    --z-lo 0.05 --z-hi 0.25 \
-    --robot-half 0.14 0.15 0.10
-```
-
-- `--grow` is seconds spent sampling. 0.3 gives a few thousand vertices,
-  which is plenty. Larger values make a denser graph and a slower demo.
-- `--robot-half` is the robot's half-size in metres (TurtleBot3 Waffle is
-  roughly 0.14 × 0.15 × 0.10). It only affects which samples are
-  considered collision-free.
-- `--z-lo/--z-hi` keep the graph in a thin slab just above the floor
-  instead of filling a cube.
-
-If there are fixed obstacles in the room you want the roadmap to avoid,
-put them in a file, one axis-aligned box per line as
-`xmin ymin zmin xmax ymax zmax`, and pass `--obstacles thatfile.txt`.
+If you later want a different one (bigger area, obstacles in the room,
+denser graph), that needs OMPL installed and is described in the main
+README. Not required for this.
 
 ## 3. Find your depth topics
 
@@ -117,8 +107,6 @@ along +x.
 
 ```bash
 ros2 launch spite_d turtlebot_demo.launch.py \
-    roadmap_graph:=$HOME/rm/roadmap_graph.txt \
-    roadmap_geoms:=$HOME/rm/roadmap_geoms.txt \
     depth_topic:=/camera/depth/image_raw \
     camera_info_topic:=/camera/depth/camera_info
 ```
