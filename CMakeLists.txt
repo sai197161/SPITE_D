@@ -161,6 +161,7 @@ if(ament_cmake_FOUND)
   find_package(rclcpp REQUIRED)
   find_package(sensor_msgs REQUIRED)
   find_package(nav_msgs REQUIRED)
+  find_package(visualization_msgs REQUIRED)
 
   rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
                                 rosidl_typesupport_cpp)
@@ -171,7 +172,8 @@ if(ament_cmake_FOUND)
       spite_d_perception
       "${cpp_typesupport_target}"
       rclcpp::rclcpp
-      ${sensor_msgs_TARGETS})
+      ${sensor_msgs_TARGETS}
+      ${visualization_msgs_TARGETS})
     install(TARGETS perception_node DESTINATION lib/${PROJECT_NAME})
   endif()
 
@@ -189,7 +191,10 @@ if(ament_cmake_FOUND)
       spite_d_planner
       "${cpp_typesupport_target}"
       rclcpp::rclcpp
-      ${nav_msgs_TARGETS})
+      ${nav_msgs_TARGETS}
+      ${geometry_msgs_TARGETS}
+      ${builtin_interfaces_TARGETS}
+      ${visualization_msgs_TARGETS})
     install(TARGETS validity_node DESTINATION lib/${PROJECT_NAME})
 
     if(TARGET build_roadmap)

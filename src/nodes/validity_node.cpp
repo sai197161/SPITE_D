@@ -6,10 +6,15 @@
 // replanning whenever the active path becomes blocked.
 //
 // Subscribes:  /spite_d_prediction/predictions (PredictedTrajectoryArray)
-// Publishes:   ~/path (nav_msgs/Path) -- vertex positions of the plan
+// Publishes:   ~/path    (nav_msgs/Path)              -- vertex positions
+//              ~/markers (visualization_msgs/MarkerArray) -- for RViz:
+//                roadmap edges coloured by validity, plus the active path
 //
 // Parameters:  roadmap_graph, roadmap_geoms (file paths, required)
 //              start_vid, goal_vid, sigma_gain
+//              marker_frame   frame the markers are published in
+//              max_drawn_edges  RViz cannot chew 100k edges; edges beyond
+//                this cap are skipped, blocked ones kept first
 // Compiled only under ament (Linux).
 
 #include "planner/replanner.hpp"
@@ -18,11 +23,16 @@
 
 #include "DynamicRoadmapTool.h"
 
+#include <builtin_interfaces/msg/time.hpp>
+#include <geometry_msgs/msg/point.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <spite_d/msg/predicted_trajectory_array.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 class ValidityNode : public rclcpp::Node {
  public:
@@ -53,6 +63,20 @@ class ValidityNode : public rclcpp::Node {
           OnPredictions(*msg);
         });
     m_pathPub = create_publisher<nav_msgs::msg::Path>("~/path", 10);
+
+    m_markerFrame = declare_parameter<std::string>("marker_frame", "map");
+    m_maxDrawnEdges =
+        size_t(declare_parameter<int>("max_drawn_edges", 4000));
+    // Drawing costs a validity lookup per edge, so it is throttled well
+    // below the prediction rate -- the display only has to be readable.
+    m_markerPeriod = declare_parameter("marker_period_s", 0.2);
+    m_markerPub = create_publisher<visualization_msgs::msg::MarkerArray>(
+        "~/markers", 1);
+
+    RCLCPP_INFO(get_logger(),
+                "roadmap loaded: %zu vertices, %zu edges; planning %zu -> %zu",
+                m_graph.vertices.size(), m_graph.edges.size(), m_startVid,
+                m_goalVid);
   }
 
  private:
@@ -118,6 +142,79 @@ class ValidityNode : public rclcpp::Node {
       path.poses.push_back(pose);
     }
     m_pathPub->publish(path);
+
+    const auto now = this->now();
+    if ((now - m_lastMarkers).seconds() >= m_markerPeriod) {
+      m_lastMarkers = now;
+      PublishMarkers(path.header.stamp);
+    }
+  }
+
+  /// Roadmap edges coloured by certification, plus the active path.
+  /// Green = certified safe, grey = undecided, red = certified blocked.
+  void PublishMarkers(const builtin_interfaces::msg::Time& stamp) {
+    using V = spite_d::ValidityServer::Validity;
+    visualization_msgs::msg::MarkerArray arr;
+
+    auto base = [&](const std::string& ns, int32_t id, double width) {
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = m_markerFrame;
+      m.header.stamp = stamp;
+      m.ns = ns;
+      m.id = id;
+      m.type = visualization_msgs::msg::Marker::LINE_LIST;
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.scale.x = width;
+      m.pose.orientation.w = 1.0;
+      return m;
+    };
+    auto vertexPoint = [&](size_t vid) {
+      geometry_msgs::msg::Point p;
+      p.x = m_graph.vertices[vid].position[0];
+      p.y = m_graph.vertices[vid].position[1];
+      p.z = m_graph.vertices[vid].position[2];
+      return p;
+    };
+
+    auto green = base("roadmap_valid", 0, 0.004);
+    green.color.g = 0.8f; green.color.a = 0.25f;
+    auto grey = base("roadmap_unknown", 1, 0.008);
+    grey.color.r = grey.color.g = grey.color.b = 0.6f; grey.color.a = 0.6f;
+    auto red = base("roadmap_blocked", 2, 0.016);
+    red.color.r = 0.9f; red.color.a = 1.0f;
+
+    // Blocked and undecided edges are the interesting ones, so they are
+    // never the edges dropped by the cap.
+    size_t drawn = 0;
+    std::vector<size_t> deferred;
+    for (size_t e = 0; e < m_graph.edges.size(); ++e) {
+      const auto& edge = m_graph.edges[e];
+      const auto v = m_server->GetEdgeValidity(edge.src, edge.tgt);
+      if (v == V::VALID) { deferred.push_back(e); continue; }
+      auto& target = (v == V::INVALID) ? red : grey;
+      target.points.push_back(vertexPoint(edge.src));
+      target.points.push_back(vertexPoint(edge.tgt));
+      ++drawn;
+    }
+    for (size_t e : deferred) {
+      if (drawn >= m_maxDrawnEdges) break;
+      const auto& edge = m_graph.edges[e];
+      green.points.push_back(vertexPoint(edge.src));
+      green.points.push_back(vertexPoint(edge.tgt));
+      ++drawn;
+    }
+    arr.markers.push_back(green);
+    arr.markers.push_back(grey);
+    arr.markers.push_back(red);
+
+    auto pathMarker = base("path", 3, 0.03);
+    pathMarker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    pathMarker.color.r = 1.0f; pathMarker.color.g = 0.8f;
+    pathMarker.color.a = 1.0f;
+    for (size_t vid : m_currentPath) pathMarker.points.push_back(vertexPoint(vid));
+    arr.markers.push_back(pathMarker);
+
+    m_markerPub->publish(arr);
   }
 
   spite_d::RoadmapGraph m_graph;
@@ -126,8 +223,14 @@ class ValidityNode : public rclcpp::Node {
   std::vector<size_t> m_currentPath;
   size_t m_startVid{0}, m_goalVid{1};
 
+  std::string m_markerFrame;
+  size_t m_maxDrawnEdges{4000};
+  double m_markerPeriod{0.2};
+  rclcpp::Time m_lastMarkers{0, 0, RCL_ROS_TIME};
+
   rclcpp::Subscription<spite_d::msg::PredictedTrajectoryArray>::SharedPtr m_sub;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr m_pathPub;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr m_markerPub;
 };
 
 int main(int argc, char** argv) {

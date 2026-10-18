@@ -270,6 +270,26 @@ sourced `install/setup.bash`.
 `tools/setup_remote_gui.sh` sets up browser-based access to Gazebo and RViz on
 a machine with no monitor.
 
+## Testing on a real robot
+
+`docs/TURTLEBOT_DEMO.md` is a standalone walkthrough for running this on
+a physical TurtleBot, written for someone who has not seen the project.
+The robot stays still and watches: a person walking through the workspace
+is tracked, roadmap edges near them are certified blocked, and the
+planned path reroutes — everything except driving the wheels, which is
+not built yet.
+
+```bash
+ros2 launch spite_d turtlebot_demo.launch.py \
+    roadmap_graph:=$HOME/rm/roadmap_graph.txt \
+    roadmap_geoms:=$HOME/rm/roadmap_geoms.txt \
+    depth_topic:=/camera/depth/image_raw
+```
+
+Both `perception_node` and `validity_node` publish RViz markers
+(`~/markers`) — tracked obstacle boxes with their track IDs, and roadmap
+edges coloured green / grey / red by certification.
+
 ## Status and known gaps
 
 The pipeline runs end to end in Gazebo. The span mechanism's cost saving is

@@ -49,13 +49,15 @@ namespace og = ompl::geometric;
 
 namespace {
 
-// Rigid box robot, matching the Gazebo model: half-extents + inscribed
-// sphere at the body origin.
-constexpr std::array<double, 3> kBoxHalf = {0.10, 0.10, 0.20};
+// Rigid box robot. Defaults match the Gazebo model; --robot-half
+// overrides them so the roadmap can be built for a real base (a
+// TurtleBot3 Waffle is roughly 0.14 x 0.15 x 0.10 half-extents).
+std::array<double, 3> kBoxHalf = {0.10, 0.10, 0.20};
 constexpr double kInscribedRadius = 0.10;
-const double kCircumscribedRadius =
-    std::sqrt(kBoxHalf[0] * kBoxHalf[0] + kBoxHalf[1] * kBoxHalf[1] +
-              kBoxHalf[2] * kBoxHalf[2]);
+double CircumscribedRadius() {
+  return std::sqrt(kBoxHalf[0] * kBoxHalf[0] + kBoxHalf[1] * kBoxHalf[1] +
+                   kBoxHalf[2] * kBoxHalf[2]);
+}
 
 struct AxisAlignedBox {
   double xmin, ymin, zmin, xmax, ymax, zmax;
@@ -67,6 +69,10 @@ struct Options {
   double growSeconds = 2.0;
   double envLo = 0.0;
   double envHi = 10.0;
+  // Separate vertical bounds: a ground robot's roadmap should be a thin
+  // slab near the floor, not a cube. Defaults to the horizontal range.
+  double zLo = 0.0, zHi = 0.0;
+  bool zSet = false;
   int edgeSamples = 8;
 };
 
@@ -78,6 +84,13 @@ bool ParseArgs(int argc, char** argv, Options& opt) {
     else if (!std::strcmp(argv[i], "--grow")) { if (!next(opt.growSeconds)) return false; }
     else if (!std::strcmp(argv[i], "--env-lo")) { if (!next(opt.envLo)) return false; }
     else if (!std::strcmp(argv[i], "--env-hi")) { if (!next(opt.envHi)) return false; }
+    else if (!std::strcmp(argv[i], "--z-lo")) { if (!next(opt.zLo)) return false; opt.zSet = true; }
+    else if (!std::strcmp(argv[i], "--z-hi")) { if (!next(opt.zHi)) return false; opt.zSet = true; }
+    else if (!std::strcmp(argv[i], "--robot-half") && i + 3 < argc) {
+      kBoxHalf = {std::atof(argv[i + 1]), std::atof(argv[i + 2]),
+                  std::atof(argv[i + 3])};
+      i += 3;
+    }
     else if (!std::strcmp(argv[i], "--edge-samples") && ++i < argc) opt.edgeSamples = std::atoi(argv[i]);
     else { std::cerr << "unknown/incomplete arg: " << argv[i] << "\n"; return false; }
   }
@@ -186,11 +199,15 @@ int main(int argc, char** argv) {
   ob::RealVectorBounds bounds(3);
   bounds.setLow(opt.envLo);
   bounds.setHigh(opt.envHi);
+  if (opt.zSet) {
+    bounds.setLow(2, opt.zLo);
+    bounds.setHigh(2, opt.zHi);
+  }
   space->setBounds(bounds);
 
   auto si = std::make_shared<ob::SpaceInformation>(space);
   si->setStateValidityChecker(std::make_shared<SphereVsBoxesChecker>(
-      si, obstacles, kCircumscribedRadius));
+      si, obstacles, CircumscribedRadius()));
   si->setStateValidityCheckingResolution(0.01);
   si->setup();
 
@@ -200,9 +217,12 @@ int main(int argc, char** argv) {
   auto pdef = std::make_shared<ob::ProblemDefinition>(si);
   ob::ScopedState<ob::SE3StateSpace> start(space), goal(space);
   const double margin = 0.05 * (opt.envHi - opt.envLo);
-  start->setXYZ(opt.envLo + margin, opt.envLo + margin, opt.envLo + margin);
+  const double zMid = opt.zSet ? 0.5 * (opt.zLo + opt.zHi)
+                               : opt.envLo + margin;
+  start->setXYZ(opt.envLo + margin, opt.envLo + margin, zMid);
   start->rotation().setIdentity();
-  goal->setXYZ(opt.envHi - margin, opt.envHi - margin, opt.envHi - margin);
+  goal->setXYZ(opt.envHi - margin, opt.envHi - margin,
+               opt.zSet ? zMid : opt.envHi - margin);
   goal->rotation().setIdentity();
   pdef->setStartAndGoalStates(start, goal);
 
@@ -256,8 +276,8 @@ int main(int argc, char** argv) {
   }
   std::cout << "unique edges: " << graph.edges.size() << "\n";
 
-  drm.Build({opt.envLo, opt.envLo, opt.envLo},
-            {opt.envHi, opt.envHi, opt.envHi});
+  drm.Build({opt.envLo, opt.envLo, opt.zSet ? opt.zLo - 1.0 : opt.envLo},
+            {opt.envHi, opt.envHi, opt.zSet ? opt.zHi + 1.0 : opt.envHi});
 
   // ---- Serialize.
   std::error_code ec;

@@ -15,10 +15,12 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <spite_d/msg/obstacle_array.hpp>
 #include <spite_d/msg/obstacle_state.hpp>
 
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace {
@@ -65,6 +67,8 @@ class PerceptionNode : public rclcpp::Node {
         });
 
     m_pub = create_publisher<spite_d::msg::ObstacleArray>("~/obstacles", 10);
+    m_markerPub = create_publisher<visualization_msgs::msg::MarkerArray>(
+        "~/markers", 1);
   }
 
  private:
@@ -124,6 +128,54 @@ class PerceptionNode : public rclcpp::Node {
       out.obstacles.push_back(o);
     }
     m_pub->publish(out);
+    PublishMarkers(out);
+  }
+
+  /// One translucent box plus an id label per tracked obstacle, so the
+  /// first question on real hardware -- "does the detector see anything,
+  /// and is it in the right place?" -- can be answered by looking.
+  void PublishMarkers(const spite_d::msg::ObstacleArray& obstacles) {
+    visualization_msgs::msg::MarkerArray arr;
+
+    visualization_msgs::msg::Marker clear;
+    clear.header = obstacles.header;
+    clear.action = visualization_msgs::msg::Marker::DELETEALL;
+    arr.markers.push_back(clear);
+
+    int32_t id = 0;
+    for (const auto& o : obstacles.obstacles) {
+      visualization_msgs::msg::Marker box;
+      box.header = obstacles.header;
+      box.ns = "obstacles";
+      box.id = id++;
+      box.type = visualization_msgs::msg::Marker::CUBE;
+      box.action = visualization_msgs::msg::Marker::ADD;
+      box.pose = o.pose;
+      box.scale.x = 2.0 * o.half_extents.x;
+      box.scale.y = 2.0 * o.half_extents.y;
+      box.scale.z = 2.0 * o.half_extents.z;
+      box.color.r = 0.9f;
+      box.color.b = 0.2f;
+      box.color.a = 0.5f;
+      arr.markers.push_back(box);
+
+      visualization_msgs::msg::Marker label;
+      label.header = obstacles.header;
+      label.ns = "obstacle_ids";
+      label.id = id;
+      label.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      label.action = visualization_msgs::msg::Marker::ADD;
+      label.pose = o.pose;
+      label.pose.position.z += o.half_extents.z + 0.15;
+      label.scale.z = 0.18;
+      label.color.r = label.color.g = label.color.b = 1.0f;
+      label.color.a = 0.9f;
+      // Watching the id change tells you the tracker is dropping and
+      // re-acquiring the same person, which is worth seeing directly.
+      label.text = "id " + std::to_string(o.id);
+      arr.markers.push_back(label);
+    }
+    m_markerPub->publish(arr);
   }
 
   std::unique_ptr<spite_d::BoxTracker> m_tracker;
@@ -135,6 +187,7 @@ class PerceptionNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr m_infoSub;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr m_depthSub;
   rclcpp::Publisher<spite_d::msg::ObstacleArray>::SharedPtr m_pub;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr m_markerPub;
 };
 
 int main(int argc, char** argv) {
