@@ -251,6 +251,14 @@ Starts Gazebo, the Gazebo↔ROS bridge, and the three nodes. Add
 `headless:=false` to open the Gazebo window; the default runs without a
 display, which is what a remote machine needs.
 
+`validity_node` runs on spans by default and prints a summary line every
+few seconds reporting how many observations needed a rebuild. Add
+`use_spans:=false` for the every-frame baseline — the same ablation the
+offline demo does, but live. The node predicts internally in both modes
+(a span *is* a frozen prediction, so it cannot consume ready-made ones);
+`prediction_node` still runs, but only so
+`/spite_d_prediction/predictions` exists to inspect and record.
+
 Worlds in `gazebo/worlds/`: `depth_single_cross` has one actor walking across
 the camera's view at constant speed (clean ground truth); `depth_multi_cross`
 has three, including two that cross each other in the image.
@@ -286,6 +294,10 @@ ros2 launch spite_d turtlebot_demo.launch.py \
     depth_topic:=/camera/depth/image_raw
 ```
 
+Run it twice, once with `use_spans:=false`, and the pair of summary
+lines is the hardware ablation: whether real walking conforms to a
+frozen prediction often enough for spans to pay off.
+
 Both `perception_node` and `validity_node` publish RViz markers
 (`~/markers`) — tracked obstacle boxes with their track IDs, and roadmap
 edges coloured green / grey / red by certification.
@@ -300,9 +312,9 @@ at that moment.
 
 Open items, roughly in priority order:
 
-1. **Spans are not yet used by the ROS node** — `validity_node` still
-   recertifies every frame. Span code is exercised by the tests and the offline
-   demo only.
+1. **No execution loop** — `validity_node` publishes a path but nothing
+   drives it, and the roadmap is a free-flying box rather than a
+   differential drive, so its paths are not drivable as-is.
 2. **Gray edges** are treated as blocked — safe but conservative. Resolving
    them with a fine-grained collision check is unimplemented.
 3. **Curved and multi-modal predictions** — spans assume a locally straight
