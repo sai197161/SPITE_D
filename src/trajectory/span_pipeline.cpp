@@ -1,5 +1,8 @@
 #include "trajectory/span_pipeline.hpp"
 
+#include <set>
+#include <vector>
+
 namespace spite_d {
 
 SpanPipeline::SpanPipeline(const Predictor& predictor, ValidityServer& server,
@@ -52,6 +55,16 @@ void SpanPipeline::Update(const std::vector<TrackedObstacle>& tracks) {
   // the RGG pass for those alone. On fully-conforming frames no slot
   // changed, so even the reconciliation sweep is skippable.
   if (!rebuilds.empty()) m_server.Update(rebuilds);
+}
+
+void SpanPipeline::RetainOnly(const std::vector<int32_t>& activeIds) {
+  const std::set<int32_t> active(activeIds.begin(), activeIds.end());
+  std::vector<int32_t> gone;
+  for (const auto& [id, _] : m_spans)
+    if (!active.count(id)) gone.push_back(id);
+  for (int32_t id : gone) m_spans.erase(id);
+  // One reconciliation pass for all of them, rather than one each.
+  m_server.RetainOnly(activeIds);
 }
 
 void SpanPipeline::Forget(int32_t obstacleId) {

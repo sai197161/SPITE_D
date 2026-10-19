@@ -69,6 +69,12 @@ class SpanPipeline {
   /// Drop a lost track and re-validate what it blocked.
   void Forget(int32_t obstacleId);
 
+  /// Keep only these obstacle ids, dropping every other live span.
+  /// Callers that receive a full snapshot of visible obstacles each
+  /// frame want this: an obstacle that leaves the scene must stop
+  /// blocking the edges its span was certified against.
+  void RetainOnly(const std::vector<int32_t>& activeIds);
+
   const Stats& GetStats() const { return m_stats; }
   const Span* GetSpan(int32_t obstacleId) const;
 

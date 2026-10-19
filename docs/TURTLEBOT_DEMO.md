@@ -114,6 +114,12 @@ ros2 launch spite_d turtlebot_demo.launch.py \
 RViz opens with the roadmap, tracked obstacles, and the planned path.
 Then walk through the space in front of the robot.
 
+Spans are on by default. For the baseline they are measured against,
+repeat the same walk with `use_spans:=false` appended. The `validity`
+summary line reports `spans: N rebuilds / M obs (P% skipped)` in the
+first case and `baseline` in the second; P% is the certification work
+the spans avoided, and the pair of runs is the measurement.
+
 ---
 
 ## Checking it stage by stage
@@ -144,6 +150,11 @@ ros2 topic hz /spite_d_prediction/predictions
 ros2 topic echo /spite_d_validity/path --once
 ```
 The validity node also prints the roadmap size on startup.
+
+**Are spans holding?** The `validity_node` summary line. A low skip
+percentage means real walking violates the frozen predictions too often
+for spans to pay off -- a real possible outcome, and the thing this run
+is for.
 
 **What's slow?** The terminal running `validity_node` is the one to
 watch. Certification is the expensive part and we already know it's the

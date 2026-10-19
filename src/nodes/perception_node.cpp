@@ -19,7 +19,9 @@
 #include <spite_d/msg/obstacle_array.hpp>
 #include <spite_d/msg/obstacle_state.hpp>
 
+#include <chrono>
 #include <cmath>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -44,6 +46,7 @@ class PerceptionNode : public rclcpp::Node {
         declare_parameter("depth_scale", 1000.0);
     m_tracker = std::make_unique<spite_d::BoxTracker>(params);
 
+    m_reportPeriod = declare_parameter("report_period_s", 5.0);
     m_cameraPose.translation = {declare_parameter("camera.x", 0.2),
                                 declare_parameter("camera.y", 5.0),
                                 declare_parameter("camera.z", 1.0)};
@@ -103,7 +106,14 @@ class PerceptionNode : public rclcpp::Node {
     frame.cameraPose = m_cameraPose;
     frame.depth = m_depthMm.data();
 
+    const auto t0 = std::chrono::steady_clock::now();
     const auto tracks = m_tracker->Update(frame);
+    m_detectMsSum += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+    ++m_frames;
+    m_trackCount = tracks.size();
+    for (const auto& t : tracks) m_idsSeen.insert(t.id);
+    ReportIfDue();
 
     spite_d::msg::ObstacleArray out;
     out.header = msg.header;
@@ -129,6 +139,29 @@ class PerceptionNode : public rclcpp::Node {
     }
     m_pub->publish(out);
     PublishMarkers(out);
+  }
+
+  /// Periodic one-line summary. These are the preliminary numbers worth
+  /// copying out of the terminal: whether perception keeps up with the
+  /// camera, how long detection takes, and how badly track ids churn --
+  /// distinct ids far above the number of people present means the
+  /// tracker is losing and re-acquiring them.
+  void ReportIfDue() {
+    const auto now = this->now();
+    if (m_lastReport.nanoseconds() == 0) { m_lastReport = now; return; }
+    const double elapsed = (now - m_lastReport).seconds();
+    if (elapsed < m_reportPeriod) return;
+
+    RCLCPP_INFO(get_logger(),
+                "perception | %.1f Hz | detect %.1f ms | tracks now %zu | "
+                "distinct ids in %.0fs: %zu",
+                m_frames / elapsed, m_frames ? m_detectMsSum / m_frames : 0.0,
+                m_trackCount, elapsed, m_idsSeen.size());
+
+    m_lastReport = now;
+    m_frames = 0;
+    m_detectMsSum = 0.0;
+    m_idsSeen.clear();
   }
 
   /// One translucent box plus an id label per tracked obstacle, so the
@@ -183,6 +216,12 @@ class PerceptionNode : public rclcpp::Node {
   std::vector<uint16_t> m_depthMm;
   double m_fx{0}, m_fy{0}, m_cx{0}, m_cy{0};
   bool m_haveInfo{false};
+
+  double m_reportPeriod{5.0};
+  rclcpp::Time m_lastReport{0, 0, RCL_ROS_TIME};
+  size_t m_frames{0}, m_trackCount{0};
+  double m_detectMsSum{0.0};
+  std::set<int32_t> m_idsSeen;
 
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr m_infoSub;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr m_depthSub;

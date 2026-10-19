@@ -34,6 +34,11 @@ def generate_launch_description():
     geoms_arg = DeclareLaunchArgument('roadmap_geoms')
     start_arg = DeclareLaunchArgument('start_vid', default_value='0')
     goal_arg = DeclareLaunchArgument('goal_vid', default_value='1')
+    spans_arg = DeclareLaunchArgument(
+        'use_spans', default_value='true',
+        description='true: amortise certification over spans. false: '
+                    'recertify every obstacle every frame (the baseline '
+                    'spans are measured against)')
     headless_arg = DeclareLaunchArgument(
         'headless', default_value='true',
         description='Run gz server-only with headless rendering (no GUI); '
@@ -53,6 +58,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         world_arg, graph_arg, geoms_arg, start_arg, goal_arg, headless_arg,
+        spans_arg,
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(gz_launch),
@@ -74,6 +80,9 @@ def generate_launch_description():
                  'camera.yaw': 0.0,
              }]),
 
+        # validity_node predicts internally now (spans own prediction), so
+        # this is here only to publish /spite_d_prediction/predictions for
+        # inspection and rosbag recording. Nothing consumes it.
         Node(package='spite_d', executable='prediction_node', output='screen',
              parameters=[{'horizon': 3.0, 'dt': 0.25,
                           'std_growth_rate': 0.1}]),
@@ -90,5 +99,11 @@ def generate_launch_description():
                  'goal_vid': ParameterValue(LaunchConfiguration('goal_vid'),
                                             value_type=int),
                  'sigma_gain': 1.0,
+                 'use_spans': ParameterValue(LaunchConfiguration('use_spans'),
+                                             value_type=bool),
+                 # Must match the prediction parameters above so the two
+                 # modes are compared on the same lookahead.
+                 'horizon': 3.0, 'dt': 0.25, 'std_growth_rate': 0.1,
+                 'slices': 1,
              }]),
     ])

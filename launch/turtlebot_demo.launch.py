@@ -21,6 +21,9 @@
 ## Usage (a matching roadmap ships with the package):
 ##   ros2 launch spite_d turtlebot_demo.launch.py \
 ##       depth_topic:=/camera/depth/image_raw
+##
+## Spans are on by default. For the baseline they are measured against,
+## add use_spans:=false and repeat the same walk.
 
 import os
 
@@ -72,6 +75,12 @@ def generate_launch_description():
 
         DeclareLaunchArgument('start_vid', default_value='0'),
         DeclareLaunchArgument('goal_vid', default_value='1'),
+        # The contribution switch. Run it once each way, same room, same
+        # walk: `use_spans:=false` is the every-frame baseline.
+        DeclareLaunchArgument('use_spans', default_value='true'),
+        DeclareLaunchArgument('slices', default_value='1'),
+        DeclareLaunchArgument('report_period_s', default_value='5.0'),
+
         DeclareLaunchArgument('marker_frame', default_value='map'),
         DeclareLaunchArgument('rviz', default_value='true'),
     ]
@@ -95,6 +104,9 @@ def generate_launch_description():
             ('/camera/camera_info', LaunchConfiguration('camera_info_topic')),
         ])
 
+    # validity_node predicts internally now -- a span IS a frozen
+    # prediction, so it cannot take ready-made ones. This node stays only
+    # so /spite_d_prediction/predictions exists to look at and to record.
     prediction = Node(
         package='spite_d', executable='prediction_node', output='screen',
         parameters=[{'horizon': 3.0, 'dt': 0.25, 'std_growth_rate': 0.1}])
@@ -109,6 +121,15 @@ def generate_launch_description():
             'goal_vid': ParameterValue(LaunchConfiguration('goal_vid'),
                                        value_type=int),
             'sigma_gain': 1.0,
+            'use_spans': ParameterValue(LaunchConfiguration('use_spans'),
+                                        value_type=bool),
+            'slices': ParameterValue(LaunchConfiguration('slices'),
+                                     value_type=int),
+            'report_period_s': ParameterValue(
+                LaunchConfiguration('report_period_s'), value_type=float),
+            # Same lookahead as the prediction node above, so the baseline
+            # and span runs are comparable.
+            'horizon': 3.0, 'dt': 0.25, 'std_growth_rate': 0.1,
             'marker_frame': LaunchConfiguration('marker_frame'),
             'max_drawn_edges': 4000,
         }])
