@@ -48,11 +48,26 @@ sudo apt install libcgal-dev libeigen3-dev libfcl-dev \
 roadmap for this demo ships with the package. If you see
 `build_roadmap tool skipped` in the build output, that is expected.)
 
-Sanity check before touching the robot — this needs no hardware:
+Sanity checks before touching the robot — neither needs hardware:
 
 ```bash
 ctest --test-dir build/spite_d        # expect 8/8 passing
 ```
+
+And that the node itself starts and loads the bundled roadmap:
+
+```bash
+ros2 run spite_d validity_node --ros-args \
+  -p roadmap_graph:="$(ros2 pkg prefix spite_d)/share/spite_d/demo_roadmap/roadmap_graph.txt" \
+  -p roadmap_geoms:="$(ros2 pkg prefix spite_d)/share/spite_d/demo_roadmap/roadmap_geoms.txt"
+```
+
+Expected: `certification mode: SPANS (amortised)`, then
+`roadmap loaded: 1373 vertices, 13675 edges; planning 0 -> 1`, then
+silence — nothing is publishing obstacles yet. Ctrl-C out. If those two
+lines appear, the build, the install paths and the parameters are sound,
+so anything that goes wrong later is perception or hardware rather than
+a broken package.
 
 ## 2. The roadmap
 
